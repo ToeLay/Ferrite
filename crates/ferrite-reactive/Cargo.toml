@@ -1,0 +1,6 @@
+[package]
+name = "ferrite-reactive"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Fine-grained reactive signal graph for Ferrite. Arena-backed, Copy signal handles, no Rc<RefCell<>> at call sites."

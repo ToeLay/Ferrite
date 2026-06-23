@@ -1,0 +1,12 @@
+[package]
+name = "ferrite-window"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Native window + event loop for Ferrite. winit for windowing/input, softbuffer to present pixels."
+
+[dependencies]
+ferrite-core = { workspace = true }
+ferrite-render-skia = { workspace = true }
+winit = "0.30"
+softbuffer = "0.4"

@@ -1,0 +1,9 @@
+[package]
+name = "ferrite-layout"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Flexbox layout for Ferrite, built on taffy. Translates Ferrite's Style into a taffy tree and exposes resolved boxes."
+
+[dependencies]
+taffy = { workspace = true }

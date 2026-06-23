@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ferrite-reactive",
+    "crates/ferrite-layout",
+    "crates/ferrite-core",
+    "crates/ferrite-render-skia",
+    "crates/ferrite-window",
+    "crates/ferrite",
+    "examples/counter",
+    "examples/window_counter",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+ferrite-reactive = { path = "crates/ferrite-reactive" }
+ferrite-layout = { path = "crates/ferrite-layout" }
+ferrite-core = { path = "crates/ferrite-core" }
+ferrite-render-skia = { path = "crates/ferrite-render-skia" }
+ferrite-window = { path = "crates/ferrite-window" }
+taffy = "0.5"
+tiny-skia = "0.11"

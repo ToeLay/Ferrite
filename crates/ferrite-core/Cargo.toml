@@ -1,0 +1,10 @@
+[package]
+name = "ferrite-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Widget tree, draw commands, and event dispatch for Ferrite. Backend-agnostic: produces a DrawCommand list, doesn't know about wgpu/skia/winit."
+
+[dependencies]
+ferrite-reactive = { workspace = true }
+ferrite-layout = { workspace = true }

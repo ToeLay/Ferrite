@@ -1,0 +1,11 @@
+[package]
+name = "ferrite-render-skia"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "CPU rasterizer backend for Ferrite: turns a DrawCommand list into pixels via tiny-skia + fontdue. No GPU, no windowing — good for headless rendering, screenshots, and as the reference backend while a wgpu backend matures."
+
+[dependencies]
+ferrite-core = { workspace = true }
+tiny-skia = { workspace = true }
+fontdue = "0.9"

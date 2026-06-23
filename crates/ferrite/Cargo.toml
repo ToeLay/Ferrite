@@ -1,0 +1,13 @@
+[package]
+name = "ferrite"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Ferrite: a reactive GUI framework for Rust. Re-exports the layered crates behind one prelude."
+
+[dependencies]
+ferrite-reactive = { workspace = true }
+ferrite-layout = { workspace = true }
+ferrite-core = { workspace = true }
+ferrite-render-skia = { workspace = true }
+ferrite-window = { workspace = true }

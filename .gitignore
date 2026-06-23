@@ -1,0 +1,5 @@
+/target
+Cargo.lock
+.DS_Store
+/counter_initial.png
+/counter_after_clicks.png
