@@ -9,6 +9,7 @@ members = [
     "crates/ferrite",
     "examples/counter",
     "examples/window_counter",
+    "examples/text_input",
 ]
 
 [workspace.package]

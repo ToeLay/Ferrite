@@ -1,0 +1,13 @@
+[package]
+name = "text_input"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "text_input"
+path = "src/main.rs"
+
+[dependencies]
+ferrite = { path = "../../crates/ferrite" }
