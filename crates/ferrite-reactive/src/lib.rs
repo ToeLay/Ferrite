@@ -26,6 +26,7 @@ impl<T: Clone + 'static> Signal<T> {
     pub fn get(&self) -> T { runtime::get_signal_value(self.id) }
 }
 impl<T: 'static> Signal<T> {
+    pub fn track(&self) { runtime::track(self.id); }
     pub fn set(&self, value: T) { runtime::set_signal_value(self.id, value); }
     pub fn update(&self, f: impl FnOnce(&mut T)) { runtime::update_signal_value(self.id, f); }
 }
@@ -33,6 +34,41 @@ impl<T: 'static> Signal<T> {
 pub fn create_signal<T: 'static>(initial: T) -> Signal<T> {
     Signal { id: runtime::create_signal_node(initial), _marker: PhantomData }
 }
+
+#[derive(Clone, Debug)]
+pub enum ListMutation<T> {
+    Push(T),
+    Insert(usize, T),
+    Remove(usize),
+    Clear,
+}
+
+pub trait SignalVecExt<T> {
+    fn push(&self, item: T);
+    fn insert(&self, index: usize, item: T);
+    fn remove(&self, index: usize);
+    fn clear(&self);
+}
+
+impl<T: Clone + 'static> SignalVecExt<T> for Signal<Vec<T>> {
+    fn push(&self, item: T) {
+        runtime::mutate_signal_vec(self.id, ListMutation::Push(item));
+    }
+    fn insert(&self, index: usize, item: T) {
+        runtime::mutate_signal_vec(self.id, ListMutation::Insert(index, item));
+    }
+    fn remove(&self, index: usize) {
+        runtime::mutate_signal_vec(self.id, ListMutation::<T>::Remove(index));
+    }
+    fn clear(&self) {
+        runtime::mutate_signal_vec(self.id, ListMutation::<T>::Clear);
+    }
+}
+
+pub fn get_mutations<T: Clone + 'static>(signal: Signal<Vec<T>>, since_revision: usize) -> (usize, Vec<ListMutation<T>>) {
+    runtime::get_signal_mutations(signal.id, since_revision)
+}
+
 
 pub struct Memo<T> {
     id: NodeId,

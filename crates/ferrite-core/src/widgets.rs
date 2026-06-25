@@ -21,6 +21,9 @@ impl Widget for Container {
     fn node_id(&self) -> NodeId { self.node }
     fn children(&self) -> &[Box<dyn Widget>] { &self.children }
     fn children_mut(&mut self) -> &mut [Box<dyn Widget>] { &mut self.children }
+    fn update(&mut self, tree: &mut LayoutTree) {
+        for child in &mut self.children { child.update(tree); }
+    }
     fn paint_self(&self, rect: Rect, out: &mut Vec<DrawCommand>) {
         if let Some(color) = self.background {
             out.push(DrawCommand::Rect { rect, color, corner_radius: self.corner_radius });
@@ -113,6 +116,14 @@ impl TextInput {
 impl Widget for TextInput {
     fn node_id(&self) -> NodeId { self.node }
     fn is_focusable(&self) -> bool { true }
+    
+    fn update(&mut self, _tree: &mut LayoutTree) {
+        let val = self.value.get();
+        let char_count = val.chars().count();
+        if self.cursor > char_count {
+            self.cursor = char_count;
+        }
+    }
 
     fn on_focus_change(&mut self, focused: bool) {
         self.focused = focused;
@@ -434,6 +445,10 @@ impl Widget for Scroll {
         } else {
             false
         }
+    }
+
+    fn update(&mut self, tree: &mut LayoutTree) {
+        self.child.update(tree);
     }
 
     fn find_focusable_at(&self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<NodeId> {

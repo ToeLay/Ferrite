@@ -266,6 +266,10 @@ impl LayoutTree {
             .expect("ferrite-layout: set_children on missing node");
     }
 
+    pub fn remove(&mut self, node: NodeId) {
+        let _ = self.inner.remove(node.0);
+    }
+
     pub fn mark_dirty(&mut self, node: NodeId) {
         let _ = self.inner.mark_dirty(node.0);
     }

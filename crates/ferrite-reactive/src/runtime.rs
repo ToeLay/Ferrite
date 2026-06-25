@@ -23,7 +23,7 @@ pub struct NodeId {
 type AnyEq = Box<dyn Fn(&dyn Any, &dyn Any) -> bool>;
 
 pub(crate) enum NodeKind {
-    Signal  { value: Box<dyn Any>, subscribers: EdgeSet },
+    Signal  { value: Box<dyn Any>, subscribers: EdgeSet, mutations: Box<dyn Any>, revision: usize },
     Memo    { compute: Box<dyn FnMut() -> Box<dyn Any>>, eq: AnyEq,
                value: Option<Box<dyn Any>>, sources: EdgeSet, subscribers: EdgeSet },
     Effect  { run: Box<dyn FnMut()>, sources: EdgeSet },
@@ -113,8 +113,13 @@ pub(crate) fn track(id: NodeId) {
     });
 }
 
-pub(crate) fn create_signal_node<T: 'static>(value: T) -> NodeId {
-    with_runtime(|rt| rt.alloc(NodeKind::Signal { value: Box::new(value), subscribers: EdgeSet::default() }))
+pub(crate) fn create_signal_node<T: 'static>(initial: T) -> NodeId {
+    with_runtime(|rt| rt.alloc(NodeKind::Signal {
+        value: Box::new(initial),
+        subscribers: EdgeSet::default(),
+        mutations: Box::new(()),
+        revision: 0,
+    }))
 }
 
 pub(crate) fn create_memo_node<T, F>(compute: F, eq: AnyEq) -> NodeId
@@ -157,18 +162,71 @@ pub(crate) fn get_memo_value<T: Clone + 'static>(id: NodeId) -> T {
 
 pub(crate) fn set_signal_value<T: 'static>(id: NodeId, value: T) {
     with_runtime(|rt| {
-        if let Some(NodeKind::Signal { value: slot, .. }) = rt.get_kind_mut(id) { *slot = Box::new(value); }
+        if let Some(NodeKind::Signal { value: slot, revision, .. }) = rt.get_kind_mut(id) { 
+            *slot = Box::new(value); 
+            *revision += 1;
+        }
     });
     notify(id);
 }
 
 pub(crate) fn update_signal_value<T: 'static>(id: NodeId, f: impl FnOnce(&mut T)) {
     with_runtime(|rt| {
-        if let Some(NodeKind::Signal { value, .. }) = rt.get_kind_mut(id) {
-            if let Some(v) = value.downcast_mut::<T>() { f(v); }
+        if let Some(NodeKind::Signal { value, revision, .. }) = rt.get_kind_mut(id) {
+            if let Some(v) = value.downcast_mut::<T>() {
+                f(v);
+                *revision += 1;
+            }
         }
     });
     notify(id);
+}
+
+pub(crate) fn mutate_signal_vec<T: Clone + 'static>(id: NodeId, mutation: crate::ListMutation<T>) {
+    with_runtime(|rt| {
+        if let Some(NodeKind::Signal { value, mutations, revision, .. }) = rt.get_kind_mut(id) {
+            if let Some(v) = value.downcast_mut::<Vec<T>>() {
+                // Apply the mutation to the actual vector
+                match &mutation {
+                    crate::ListMutation::Push(item) => v.push(item.clone()),
+                    crate::ListMutation::Insert(index, item) => v.insert(*index, item.clone()),
+                    crate::ListMutation::Remove(index) => { v.remove(*index); },
+                    crate::ListMutation::Clear => v.clear(),
+                }
+                
+                // Record the mutation
+                *revision += 1;
+                let current_rev = *revision;
+                
+                // Downcast mutations to Vec<(usize, ListMutation<T>)>. 
+                // If it fails (it was initialized to ()), replace it.
+                if !mutations.is::<Vec<(usize, crate::ListMutation<T>)>>() {
+                    *mutations = Box::new(Vec::<(usize, crate::ListMutation<T>)>::new());
+                }
+                
+                if let Some(m_vec) = mutations.downcast_mut::<Vec<(usize, crate::ListMutation<T>)>>() {
+                    m_vec.push((current_rev, mutation));
+                }
+            }
+        }
+    });
+    notify(id);
+}
+
+pub(crate) fn get_signal_mutations<T: Clone + 'static>(id: NodeId, since_revision: usize) -> (usize, Vec<crate::ListMutation<T>>) {
+    with_runtime(|rt| {
+        if let Some(NodeKind::Signal { mutations, revision, .. }) = rt.get_kind(id) {
+            if let Some(m_vec) = mutations.downcast_ref::<Vec<(usize, crate::ListMutation<T>)>>() {
+                let recent: Vec<_> = m_vec.iter()
+                    .filter(|(rev, _)| *rev > since_revision)
+                    .map(|(_, muta)| muta.clone())
+                    .collect();
+                return (*revision, recent);
+            }
+            return (*revision, Vec::new());
+        }
+        (0, Vec::new())
+    })
 }
 
 fn run_effect(id: NodeId) {

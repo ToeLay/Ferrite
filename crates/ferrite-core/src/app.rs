@@ -31,6 +31,8 @@ impl App {
     }
 
     pub fn render(&mut self, width: f32, height: f32) -> Vec<DrawCommand> {
+        self.root.update(&mut self.tree);
+
         let dirty_nodes = crate::dirty::take_dirty_nodes();
         for node in dirty_nodes {
             self.tree.mark_dirty(node);

@@ -549,6 +549,8 @@ impl Widget for VisibleWhenWidget {
         std::slice::from_mut(&mut self.child)
     }
 
+    fn update(&mut self, tree: &mut LayoutTree) { self.child.update(tree); }
+
     fn paint(&self, tree: &LayoutTree, ox: f32, oy: f32, out: &mut Vec<DrawCommand>) {
         if (self.visible)() {
             let r = tree.layout(self.node);
@@ -608,6 +610,137 @@ pub fn switch<K: PartialEq + Clone + 'static>(key: Signal<K>, branches: impl Int
     col(children)
 }
 
+// ── list ─────────────────────────────────────────────────────────────────────
+
+pub fn list<T: Clone + 'static>(
+    signal: Signal<Vec<T>>,
+    view_fn: impl Fn(&T) -> AnyView + 'static,
+) -> AnyView {
+    AnyView { inner: Box::new(ListDescriptor {
+        signal,
+        view_fn: Rc::new(view_fn),
+        overrides: StyleOverrides::default(),
+    }) }
+}
+
+struct ListDescriptor<T> {
+    signal: Signal<Vec<T>>,
+    view_fn: Rc<dyn Fn(&T) -> AnyView>,
+    overrides: StyleOverrides,
+}
+
+impl<T: Clone + 'static> ViewDescriptor for ListDescriptor<T> {
+    fn build(self: Box<Self>, tree: &mut LayoutTree) -> Box<dyn Widget> {
+        let items = self.signal.get();
+        let mut children = Vec::with_capacity(items.len());
+        let mut child_nodes = Vec::with_capacity(items.len());
+        
+        for item in &items {
+            let child = (self.view_fn)(item).build(tree);
+            child_nodes.push(child.node_id());
+            children.push(child);
+        }
+
+        let mut natural_style = Style {
+            direction: Direction::Column, // Default to column for lists
+            ..Default::default()
+        };
+        self.overrides.apply_to(&mut natural_style);
+        
+        let node = tree.new_with_children(natural_style, &child_nodes);
+        let last_revision = ferrite_reactive::get_mutations(self.signal, 0).0;
+
+        let sig_eff = self.signal.clone();
+        ferrite_reactive::create_effect(move || {
+            sig_eff.track(); // Subscribe to any mutation or change
+            crate::dirty::request_repaint();
+        });
+
+        Box::new(ListWidget {
+            node,
+            signal: self.signal,
+            view_fn: self.view_fn,
+            children,
+            last_revision,
+        })
+    }
+    fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
+}
+
+struct ListWidget<T> {
+    node: NodeId,
+    signal: Signal<Vec<T>>,
+    view_fn: Rc<dyn Fn(&T) -> AnyView>,
+    children: Vec<Box<dyn Widget>>,
+    last_revision: usize,
+}
+
+impl<T: Clone + 'static> Widget for ListWidget<T> {
+    fn node_id(&self) -> NodeId { self.node }
+    fn children(&self) -> &[Box<dyn Widget>] { &self.children }
+    fn children_mut(&mut self) -> &mut [Box<dyn Widget>] { &mut self.children }
+    
+    fn update(&mut self, tree: &mut LayoutTree) {
+        let (new_rev, mutations) = ferrite_reactive::get_mutations(self.signal, self.last_revision);
+        if new_rev > self.last_revision {
+            if mutations.is_empty() {
+                // A full .set() or .update() occurred (not via SignalVecExt). Full rebuild required!
+                for child in &mut self.children { child.destroy(tree); }
+                self.children.clear();
+                
+                let items = self.signal.get();
+                let mut child_nodes = Vec::with_capacity(items.len());
+                for item in &items {
+                    let child = (self.view_fn)(item).build(tree);
+                    child_nodes.push(child.node_id());
+                    self.children.push(child);
+                }
+                tree.set_children(self.node, &child_nodes);
+                crate::dirty::request_repaint();
+            } else {
+                // Apply O(1) differential updates
+                let mut changed = false;
+                for mutation in mutations {
+                    changed = true;
+                    match mutation {
+                        ferrite_reactive::ListMutation::Push(item) => {
+                            let child = (self.view_fn)(&item).build(tree);
+                            self.children.push(child);
+                        }
+                        ferrite_reactive::ListMutation::Insert(index, item) => {
+                            let child = (self.view_fn)(&item).build(tree);
+                            self.children.insert(index, child);
+                        }
+                        ferrite_reactive::ListMutation::Remove(index) => {
+                            if index < self.children.len() {
+                                let mut removed = self.children.remove(index);
+                                removed.destroy(tree);
+                            }
+                        }
+                        ferrite_reactive::ListMutation::Clear => {
+                            for child in &mut self.children {
+                                child.destroy(tree);
+                            }
+                            self.children.clear();
+                        }
+                    }
+                }
+                if changed {
+                    let child_nodes: Vec<NodeId> = self.children.iter().map(|c| c.node_id()).collect();
+                    tree.set_children(self.node, &child_nodes);
+                    crate::dirty::request_repaint();
+                }
+            }
+            self.last_revision = new_rev;
+        }
+
+        // Recursively update children
+        for child in &mut self.children {
+            child.update(tree);
+        }
+    }
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -653,7 +786,7 @@ mod tests {
         let root = col([
             label(move || format!("Count: {}", count.get())),
         ]).width(200.0).height(50.0);
-        let widget = root.build(&mut tree);
+        let mut widget = root.build(&mut tree);
         tree.compute(widget.node_id(), 200.0, 50.0);
         let mut cmds = Vec::new();
         widget.paint(&tree, 0.0, 0.0, &mut cmds);
@@ -665,12 +798,48 @@ mod tests {
 
         count.set(5);
         cmds.clear();
+        widget.update(&mut tree); // Manual update tick
         widget.paint(&tree, 0.0, 0.0, &mut cmds);
-        let txt = cmds.iter().find_map(|c| match c {
+        let txt2 = cmds.iter().find_map(|c| match c {
             DrawCommand::Text { content, .. } => Some(content.clone()),
             _ => None,
         });
-        assert_eq!(txt.as_deref(), Some("Count: 5"));
+        assert_eq!(txt2.as_deref(), Some("Count: 5"));
+    }
+
+    use ferrite_reactive::SignalVecExt;
+    
+    #[test]
+    fn list_mutations_update_children() {
+        let count = reactive::create_signal(vec!["A".to_string(), "B".to_string()]);
+        let mut tree = LayoutTree::new();
+        let root = col([
+            list(count, |item| text(item))
+        ]).width(200.0).height(50.0);
+        let mut widget = root.build(&mut tree);
+        
+        // Initial state
+        assert_eq!(widget.children()[0].children().len(), 2);
+        
+        // Push
+        count.push("C".to_string());
+        widget.update(&mut tree);
+        assert_eq!(widget.children()[0].children().len(), 3);
+        
+        // Remove
+        count.remove(0);
+        widget.update(&mut tree);
+        assert_eq!(widget.children()[0].children().len(), 2);
+        
+        // Clear
+        count.clear();
+        widget.update(&mut tree);
+        assert_eq!(widget.children()[0].children().len(), 0);
+        
+        // Set
+        count.set(vec!["X".to_string()]);
+        widget.update(&mut tree);
+        assert_eq!(widget.children()[0].children().len(), 1);
     }
 
     #[test]

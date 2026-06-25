@@ -27,6 +27,17 @@ pub trait Widget {
     /// Return `true` to consume the event.
     fn on_key(&mut self, _event: &KeyEvent) -> bool { false }
 
+    /// Called before layout to process reactive state changes or dynamic children
+    fn update(&mut self, _tree: &mut LayoutTree) {}
+
+    /// Called when the widget is permanently removed from the tree
+    fn destroy(&mut self, tree: &mut LayoutTree) {
+        for child in self.children_mut() {
+            child.destroy(tree);
+        }
+        tree.remove(self.node_id());
+    }
+
 
     fn paint(&self, tree: &LayoutTree, ox: f32, oy: f32, out: &mut Vec<DrawCommand>) {
         let r = tree.layout(self.node_id());

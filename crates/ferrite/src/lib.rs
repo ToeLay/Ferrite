@@ -4,11 +4,11 @@ pub use ferrite_core::{
     reactive, AlignItems, App, Color, Direction, DrawCommand, Edges, JustifyContent,
     KeyCode, KeyEvent, Modifiers, LayoutTree, NodeId, Rect, Size, Style, Widget,
 };
-pub use ferrite_reactive::{create_effect, create_memo, create_signal, Memo, Scope, Signal};
+pub use ferrite_reactive::{create_effect, create_memo, create_signal, Memo, Scope, Signal, SignalVecExt};
 
 // New declarative API
 pub use ferrite_core::{AnyView, View};
-pub use ferrite_core::{text, label, button, input, col, row, spacer, divider, checkbox, slider, switch, scroll};
+pub use ferrite_core::{text, label, button, input, col, row, spacer, divider, checkbox, slider, switch, scroll, list};
 pub use ferrite_core::{provide, inject, reset_context, Theme};
 
 // Alias create_signal to use_state for component-local state idiom
@@ -46,7 +46,7 @@ pub fn run_with(config: ferrite_window::WindowConfig, root: impl View) {
 pub mod prelude {
     // Declarative API (primary)
     pub use crate::{
-        text, label, button, input, col, row, spacer, divider, checkbox, slider, switch, scroll,
+        text, label, button, input, col, row, spacer, divider, checkbox, slider, switch, scroll, list,
         AnyView, View, Theme,
         provide, inject, reset_context, use_state,
         run, run_with,
@@ -54,7 +54,7 @@ pub mod prelude {
     // Reactive primitives
     pub use crate::{
         create_effect, create_memo, create_signal,
-        reactive, Memo, Scope, Signal,
+        reactive, Memo, Scope, Signal, SignalVecExt,
     };
     // Layout & style
     pub use crate::{AlignItems, Color, Direction, Edges, JustifyContent, Size};
