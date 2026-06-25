@@ -1,4 +1,5 @@
 mod app;
+pub mod clipboard;
 mod color;
 pub mod context;
 mod dirty;

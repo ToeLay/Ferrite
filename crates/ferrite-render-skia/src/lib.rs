@@ -90,8 +90,7 @@ pub fn wrap_text(text: &str, size: f32, max_width: Option<f32>, f: &fontdue::Fon
             current_width = current_line.chars().map(|c| f.metrics(c, size).advance_width).sum();
         }
         
-        let final_trimmed = current_line.trim_end();
-        let final_width: f32 = final_trimmed.chars().map(|c| f.metrics(c, size).advance_width).sum();
+        let final_width: f32 = current_line.chars().map(|c| f.metrics(c, size).advance_width).sum();
         max_line_width = max_line_width.max(final_width);
         lines.push(TextLine { text: current_line, width: final_width });
     }
@@ -165,7 +164,7 @@ pub fn render_to_pixmap(commands: &[DrawCommand], width: u32, height: u32, backg
                 let mut current_y = *y;
                 for line in lines {
                     if let Some(c) = active_clip {
-                        if *x > c.x + c.width || current_y > c.y + c.height || *x + line.width < c.x || current_y - *size < c.y {
+                        if *x > c.x + c.width || current_y > c.y + c.height || *x + line.width < c.x || current_y + line_height < c.y {
                             current_y += line_height;
                             continue;
                         }

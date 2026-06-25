@@ -231,6 +231,14 @@ impl LayoutTree {
     pub fn set_text_measure(&mut self, f: impl Fn(&str, f32, Option<f32>) -> (f32, f32) + 'static) {
         self.measure_fn = Some(Box::new(f));
     }
+    
+    pub fn measure_text(&self, text: &str, font_size: f32) -> (f32, f32) {
+        if let Some(f) = &self.measure_fn {
+            f(text, font_size, None)
+        } else {
+            (text.chars().count() as f32 * font_size * 0.62, font_size * 1.4)
+        }
+    }
 
     pub fn add_pre_layout_hook(&mut self, hook: impl Fn() -> Vec<(NodeId, Style)> + 'static) {
         self.hooks.push(Box::new(hook));

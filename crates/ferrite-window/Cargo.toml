@@ -10,3 +10,4 @@ ferrite-core = { workspace = true }
 ferrite-render-skia = { workspace = true }
 winit = "0.30"
 softbuffer = "0.4"
+arboard = "3.6.1"

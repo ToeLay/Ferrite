@@ -300,7 +300,8 @@ impl ViewDescriptor for InputDescriptor {
         let node = tree.new_leaf(style);
         let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
         Box::new(TextInput {
-            node, value, placeholder, focused: false, cursor: 0,
+            node, value, placeholder, focused: false, cursor: 0, selection_start: None, scroll_x: 0.0,
+            cursor_px: 0.0, selection_start_px: None,
             font_size, width: input_width, theme,
         })
     }

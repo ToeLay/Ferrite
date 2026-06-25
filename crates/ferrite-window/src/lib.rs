@@ -10,6 +10,8 @@ use winit::window::{Window, WindowAttributes, WindowId};
 
 pub use ferrite_core::Color;
 
+mod clipboard;
+
 pub struct WindowConfig {
     pub title: String,
     pub width: u32,
@@ -156,6 +158,7 @@ fn map_key(key: &Key, mods: winit::keyboard::ModifiersState) -> Option<KeyEvent>
             NamedKey::ArrowDown  => KeyCode::Down,
             NamedKey::Home       => KeyCode::Home,
             NamedKey::End        => KeyCode::End,
+            NamedKey::Space      => KeyCode::Char(' '),
             _ => return None,
         },
         _ => return None,
@@ -164,6 +167,7 @@ fn map_key(key: &Key, mods: winit::keyboard::ModifiersState) -> Option<KeyEvent>
 }
 
 pub fn run(config: WindowConfig, app: App) {
+    clipboard::init_clipboard();
     let event_loop = EventLoop::new().expect("create event loop");
     event_loop.set_control_flow(ControlFlow::Wait);
     let context = Context::new(event_loop.owned_display_handle()).expect("create softbuffer context");

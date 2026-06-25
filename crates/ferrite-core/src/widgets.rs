@@ -90,6 +90,10 @@ pub struct TextInput {
     pub(crate) placeholder: String,
     pub(crate) focused: bool,
     pub(crate) cursor: usize,
+    pub(crate) selection_start: Option<usize>,
+    pub(crate) scroll_x: f32,
+    pub(crate) cursor_px: f32,
+    pub(crate) selection_start_px: Option<f32>,
     pub(crate) font_size: f32,
     pub(crate) width: f32,
     pub(crate) theme: Theme,
@@ -109,20 +113,160 @@ impl TextInput {
         tree.set_style(self.node, text_input_style(self.width, size));
         self
     }
-
-    fn cursor_x(&self) -> f32 { self.cursor as f32 * self.font_size * 0.62 }
+    
+    // Returns (start, end) indices for the current selection in correct order
+    fn selection_range(&self) -> Option<(usize, usize)> {
+        self.selection_start.map(|s| if s <= self.cursor { (s, self.cursor) } else { (self.cursor, s) })
+    }
+    
+    // Deletes the currently selected text. Returns true if something was deleted.
+    fn delete_selection(&mut self) -> bool {
+        if let Some((start, end)) = self.selection_range() {
+            if start != end {
+                let val = self.value.get();
+                let byte_start = val.char_indices().nth(start).map(|(i, _)| i).unwrap_or(val.len());
+                let byte_end = val.char_indices().nth(end).map(|(i, _)| i).unwrap_or(val.len());
+                let mut s = val.clone();
+                s.replace_range(byte_start..byte_end, "");
+                self.value.set(s);
+                self.cursor = start;
+                self.selection_start = None;
+                return true;
+            }
+        }
+        self.selection_start = None;
+        false
+    }
+    
+    // Update selection state based on shift key
+    fn handle_shift(&mut self, shift: bool) {
+        if shift {
+            if self.selection_start.is_none() {
+                self.selection_start = Some(self.cursor);
+            }
+        } else {
+            self.selection_start = None;
+        }
+    }
+    fn ensure_cursor_visible(&mut self, width: f32, total_text_width: f32) {
+        let pad = 10.0;
+        let inner_w = width - 2.0 * pad;
+        let cx = self.cursor_px;
+        
+        // If cursor is to the left of visible area
+        if cx < self.scroll_x {
+            self.scroll_x = cx.max(0.0);
+        }
+        // If cursor is to the right of visible area
+        else if cx > self.scroll_x + inner_w {
+            self.scroll_x = cx - inner_w + 2.0; // small margin
+        }
+        
+        let max_scroll = (total_text_width - inner_w).max(0.0);
+        if self.scroll_x > max_scroll {
+            self.scroll_x = max_scroll;
+        }
+    }
 }
 
 impl Widget for TextInput {
     fn node_id(&self) -> NodeId { self.node }
     fn is_focusable(&self) -> bool { true }
     
-    fn update(&mut self, _tree: &mut LayoutTree) {
+    fn click_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<NodeId> {
+        let r = tree.layout(self.node_id());
+        let ax = ox + r.x;
+        let ay = oy + r.y;
+        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return None; }
+        
+        let rel_x = px - (ax + 10.0) + self.scroll_x;
+        let val = self.value.get();
+        let mut found_idx = val.chars().count();
+        let mut current_px = 0.0;
+        
+        if rel_x <= 0.0 {
+            found_idx = 0;
+        } else {
+            for (i, (byte_idx, ch)) in val.char_indices().enumerate() {
+                let s = &val[..byte_idx];
+                let (w, _) = tree.measure_text(s, self.font_size);
+                let (cw, _) = tree.measure_text(&ch.to_string(), self.font_size);
+                if rel_x < w + cw / 2.0 {
+                    found_idx = i;
+                    break;
+                }
+            }
+        }
+        
+        self.cursor = found_idx;
+        self.selection_start = None;
+        request_repaint();
+        Some(self.node_id())
+    }
+
+    fn drag_at(&mut self, tree: &LayoutTree, ox: f32, _oy: f32, px: f32, _py: f32) -> bool {
+        let r = tree.layout(self.node_id());
+        let ax = ox + r.x;
+        
+        if self.selection_start.is_none() {
+            self.selection_start = Some(self.cursor);
+        }
+        
+        let rel_x = px - (ax + 10.0) + self.scroll_x;
+        let val = self.value.get();
+        let mut found_idx = val.chars().count();
+        
+        if rel_x <= 0.0 {
+            found_idx = 0;
+        } else {
+            for (i, (byte_idx, ch)) in val.char_indices().enumerate() {
+                let s = &val[..byte_idx];
+                let (w, _) = tree.measure_text(s, self.font_size);
+                let (cw, _) = tree.measure_text(&ch.to_string(), self.font_size);
+                if rel_x < w + cw / 2.0 {
+                    found_idx = i;
+                    break;
+                }
+            }
+        }
+        
+        if self.cursor != found_idx {
+            self.cursor = found_idx;
+            request_repaint();
+        }
+        true
+    }
+    
+    fn update(&mut self, tree: &mut LayoutTree) {
         let val = self.value.get();
         let char_count = val.chars().count();
         if self.cursor > char_count {
             self.cursor = char_count;
         }
+        if let Some(s) = self.selection_start {
+            if s > char_count {
+                self.selection_start = Some(char_count);
+            }
+        }
+        
+        // Compute pixel offsets precisely using fontdue
+        let byte_pos = val.char_indices().nth(self.cursor).map(|(i, _)| i).unwrap_or(val.len());
+        let s = &val[..byte_pos];
+        let (w, _) = tree.measure_text(s, self.font_size);
+        self.cursor_px = w;
+        
+        if let Some(s_start) = self.selection_start {
+            let s_byte = val.char_indices().nth(s_start).map(|(i, _)| i).unwrap_or(val.len());
+            let s_str = &val[..s_byte];
+            let (sw, _) = tree.measure_text(s_str, self.font_size);
+            self.selection_start_px = Some(sw);
+        } else {
+            self.selection_start_px = None;
+        }
+        
+        let r = tree.layout(self.node_id());
+        let (total_w, _) = tree.measure_text(&val, self.font_size);
+        self.ensure_cursor_visible(r.width, total_w);
     }
 
     fn on_focus_change(&mut self, focused: bool) {
@@ -133,32 +277,91 @@ impl Widget for TextInput {
     fn on_key(&mut self, event: &KeyEvent) -> bool {
         let val = self.value.get();
         let char_count = val.chars().count();
+        let is_cmd = event.modifiers.meta || event.modifiers.ctrl;
+        
         match &event.key {
             KeyCode::Char(ch) => {
-                let byte_pos = val.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(val.len());
-                let mut s = val.clone(); s.insert(byte_pos, *ch);
-                self.cursor += 1; self.value.set(s); request_repaint(); true
+                if is_cmd && (*ch == 'a' || *ch == 'A') {
+                    self.selection_start = Some(0);
+                    self.cursor = char_count;
+                    request_repaint();
+                    return true;
+                }
+                if is_cmd && (*ch == 'c' || *ch == 'C') {
+                    if let Some((start, end)) = self.selection_range() {
+                        if start != end {
+                            let text_val = self.value.get();
+                            let chars: String = text_val.chars().skip(start).take(end - start).collect();
+                            crate::clipboard::set_text(chars);
+                        }
+                    }
+                    return true;
+                }
+                if is_cmd && (*ch == 'v' || *ch == 'V') {
+                    if let Some(text) = crate::clipboard::get_text() {
+                        self.delete_selection();
+                        let mut s = self.value.get();
+                        let byte_pos = s.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(s.len());
+                        s.insert_str(byte_pos, &text);
+                        self.cursor += text.chars().count();
+                        self.value.set(s);
+                        request_repaint();
+                    }
+                    return true;
+                }
+                // Typing a normal char
+                if !is_cmd {
+                    self.delete_selection();
+                    let mut s = self.value.get();
+                    let byte_pos = s.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(s.len());
+                    s.insert(byte_pos, *ch);
+                    self.cursor += 1;
+                    self.value.set(s);
+                    request_repaint();
+                }
+                true
             }
             KeyCode::Backspace => {
-                if self.cursor > 0 {
-                    let byte_pos = val.char_indices().nth(self.cursor - 1).map(|(i,_)| i).unwrap_or(0);
-                    let mut s = val.clone(); s.remove(byte_pos);
-                    self.cursor -= 1; self.value.set(s); request_repaint();
+                if !self.delete_selection() && self.cursor > 0 {
+                    let mut s = self.value.get();
+                    let byte_pos = s.char_indices().nth(self.cursor - 1).map(|(i,_)| i).unwrap_or(0);
+                    s.remove(byte_pos);
+                    self.cursor -= 1;
+                    self.value.set(s);
+                    request_repaint();
                 }
                 true
             }
             KeyCode::Delete => {
-                if self.cursor < char_count {
-                    let byte_pos = val.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(val.len());
-                    let mut s = val.clone(); s.remove(byte_pos);
-                    self.value.set(s); request_repaint();
+                if !self.delete_selection() && self.cursor < char_count {
+                    let mut s = self.value.get();
+                    let byte_pos = s.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(s.len());
+                    s.remove(byte_pos);
+                    self.value.set(s);
+                    request_repaint();
                 }
                 true
             }
-            KeyCode::Left  => { if self.cursor > 0 { self.cursor -= 1; request_repaint(); } true }
-            KeyCode::Right => { if self.cursor < char_count { self.cursor += 1; request_repaint(); } true }
-            KeyCode::Home  => { self.cursor = 0; request_repaint(); true }
-            KeyCode::End   => { self.cursor = char_count; request_repaint(); true }
+            KeyCode::Left  => { 
+                self.handle_shift(event.modifiers.shift);
+                if self.cursor > 0 { self.cursor -= 1; request_repaint(); } 
+                true 
+            }
+            KeyCode::Right => { 
+                self.handle_shift(event.modifiers.shift);
+                if self.cursor < char_count { self.cursor += 1; request_repaint(); } 
+                true 
+            }
+            KeyCode::Home  => { 
+                self.handle_shift(event.modifiers.shift);
+                self.cursor = 0; request_repaint(); 
+                true 
+            }
+            KeyCode::End   => { 
+                self.handle_shift(event.modifiers.shift);
+                self.cursor = char_count; request_repaint(); 
+                true 
+            }
             KeyCode::Tab | KeyCode::Escape => false,
             _ => false,
         }
@@ -170,22 +373,48 @@ impl Widget for TextInput {
         out.push(DrawCommand::Rect { rect, color: border_color, corner_radius: self.theme.radius_md - 1.0 });
         let inner = Rect { x: rect.x + 1.5, y: rect.y + 1.5, width: rect.width - 3.0, height: rect.height - 3.0 };
         out.push(DrawCommand::Rect { rect: inner, color: self.theme.surface, corner_radius: self.theme.radius_md - 2.0 });
+        out.push(DrawCommand::PushClip { rect: inner });
+        
         let val = self.value.get();
         let text_y = rect.y + (rect.height - self.font_size) / 2.0;
+        let base_x = rect.x + pad - self.scroll_x;
+        
         if val.is_empty() {
-            out.push(DrawCommand::Text { x: rect.x + pad, y: text_y, content: self.placeholder.clone(),
-                size: self.font_size, color: self.theme.muted, max_width: Some(rect.width - 2.0 * pad) });
+            out.push(DrawCommand::Text { x: base_x, y: text_y, content: self.placeholder.clone(),
+                size: self.font_size, color: self.theme.muted, max_width: None });
         } else {
-            out.push(DrawCommand::Text { x: rect.x + pad, y: text_y, content: val,
-                size: self.font_size, color: self.theme.on_surface, max_width: Some(rect.width - 2.0 * pad) });
+            out.push(DrawCommand::Text { x: base_x, y: text_y, content: val,
+                size: self.font_size, color: self.theme.on_surface, max_width: None });
         }
         if self.focused {
-            let cx = rect.x + pad + self.cursor_x();
+            // Draw selection box
+            if let Some((start, end)) = self.selection_range() {
+                if start != end {
+                    let (s_px, e_px) = if start == self.cursor {
+                        (self.cursor_px, self.selection_start_px.unwrap_or(0.0))
+                    } else {
+                        (self.selection_start_px.unwrap_or(0.0), self.cursor_px)
+                    };
+                    
+                    let sx = base_x + s_px;
+                    let ex = base_x + e_px;
+                    out.push(DrawCommand::Rect {
+                        rect: Rect { x: sx, y: text_y, width: ex - sx, height: self.font_size },
+                        color: Color { a: 0.3, ..self.theme.primary },
+                        corner_radius: 2.0,
+                    });
+                }
+            }
+            
+            // Draw cursor
+            let cx = base_x + self.cursor_px;
             out.push(DrawCommand::Rect {
                 rect: Rect { x: cx, y: text_y, width: 2.0, height: self.font_size },
                 color: self.theme.primary, corner_radius: 0.0,
             });
         }
+        
+        out.push(DrawCommand::PopClip);
     }
 }
 
