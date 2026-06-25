@@ -82,6 +82,7 @@ impl ApplicationHandler for Runner {
 
             WindowEvent::MouseInput { state: ElementState::Released, button: MouseButton::Left, .. } => {
                 self.drag_active = false;
+                self.app.release_drag();
             }
 
             WindowEvent::MouseWheel { delta, .. } => {

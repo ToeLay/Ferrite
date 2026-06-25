@@ -5,11 +5,12 @@ pub struct App {
     tree: LayoutTree,
     root: Box<dyn Widget>,
     focused: Option<NodeId>,
+    active_drag: Option<NodeId>,
 }
 
 impl App {
     pub fn new(tree: LayoutTree, root: Box<dyn Widget>) -> Self {
-        App { tree, root, focused: None }
+        App { tree, root, focused: None, active_drag: None }
     }
 
     pub fn layout_tree(&self) -> &LayoutTree { &self.tree }
@@ -47,11 +48,21 @@ impl App {
             if let Some(new) = new_focus  { self.root.dispatch_focus(new, true);  }
             self.focused = new_focus;
         }
-        self.root.click_at(&self.tree, 0.0, 0.0, x, y)
+        let clicked = self.root.click_at(&self.tree, 0.0, 0.0, x, y);
+        self.active_drag = clicked;
+        clicked.is_some()
     }
 
     pub fn drag(&mut self, x: f32, y: f32) -> bool {
-        self.root.drag_at(&self.tree, 0.0, 0.0, x, y)
+        if let Some(target) = self.active_drag {
+            self.root.dispatch_drag(target, &self.tree, 0.0, 0.0, x, y)
+        } else {
+            false
+        }
+    }
+
+    pub fn release_drag(&mut self) {
+        self.active_drag = None;
     }
 
     pub fn scroll(&mut self, px: f32, py: f32, dx: f32, dy: f32) -> bool {

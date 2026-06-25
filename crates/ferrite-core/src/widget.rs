@@ -35,22 +35,34 @@ pub trait Widget {
         for child in self.children() { child.paint(tree, abs.x, abs.y, out); }
     }
 
-    fn click_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
+    fn click_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<NodeId> {
         let r = tree.layout(self.node_id());
         let ax = ox + r.x; let ay = oy + r.y;
-        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return false; }
+        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return None; }
         for child in self.children_mut().iter_mut().rev() {
-            if child.click_at(tree, ax, ay, px, py) { return true; }
+            if let Some(id) = child.click_at(tree, ax, ay, px, py) { return Some(id); }
         }
-        self.on_click()
+        if self.on_click() { Some(self.node_id()) } else { None }
     }
 
     fn drag_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
         let r = tree.layout(self.node_id());
         let ax = ox + r.x; let ay = oy + r.y;
-        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return false; }
+        // Default drag_at no longer bounds-checks, because dispatch_drag only calls it on the captured widget!
         for child in self.children_mut().iter_mut().rev() {
             if child.drag_at(tree, ax, ay, px, py) { return true; }
+        }
+        false
+    }
+
+    fn dispatch_drag(&mut self, target: NodeId, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
+        if self.node_id() == target {
+            return self.drag_at(tree, ox, oy, px, py);
+        }
+        let r = tree.layout(self.node_id());
+        let ax = ox + r.x; let ay = oy + r.y;
+        for child in self.children_mut() {
+            if child.dispatch_drag(target, tree, ax, ay, px, py) { return true; }
         }
         false
     }

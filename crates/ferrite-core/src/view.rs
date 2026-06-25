@@ -557,11 +557,11 @@ impl Widget for VisibleWhenWidget {
         }
     }
 
-    fn click_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
-        if !(self.visible)() { return false; }
+    fn click_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<NodeId> {
+        if !(self.visible)() { return None; }
         let r = tree.layout(self.node);
         let ax = ox + r.x; let ay = oy + r.y;
-        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return false; }
+        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return None; }
         self.child.click_at(tree, ax, ay, px, py)
     }
 }

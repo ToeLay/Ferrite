@@ -284,15 +284,15 @@ pub struct Slider {
 impl Widget for Slider {
     fn node_id(&self) -> NodeId { self.node }
 
-    fn click_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
+    fn click_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<NodeId> {
         let r = tree.layout(self.node_id());
         let ax = ox + r.x;
         let ay = oy + r.y;
-        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return false; }
+        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return None; }
         let ratio = ((px - ax) / r.width).clamp(0.0, 1.0);
         self.value.set(self.min + (self.max - self.min) * ratio);
         request_repaint();
-        true
+        Some(self.node_id())
     }
 
     fn drag_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, _py: f32) -> bool {
@@ -388,15 +388,15 @@ impl Widget for Scroll {
         }
     }
 
-    fn click_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
+    fn click_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<NodeId> {
         let r = tree.layout(self.node_id());
         let ax = ox + r.x; let ay = oy + r.y;
-        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return false; }
+        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return None; }
         
-        if self.child.click_at(tree, ax - self.scroll_x, ay - self.scroll_y, px, py) {
-            return true;
+        if let Some(id) = self.child.click_at(tree, ax - self.scroll_x, ay - self.scroll_y, px, py) {
+            return Some(id);
         }
-        self.on_click()
+        if self.on_click() { Some(self.node_id()) } else { None }
     }
 
     fn drag_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
