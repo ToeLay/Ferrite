@@ -1,6 +1,7 @@
 use crate::{request_repaint, Color, DrawCommand, KeyCode, KeyEvent, Widget};
 use ferrite_layout::{LayoutTree, NodeId, Rect, Size, Style};
 use ferrite_reactive::Signal;
+use crate::theme::Theme;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -86,6 +87,7 @@ pub struct TextInput {
     pub(crate) cursor: usize,
     pub(crate) font_size: f32,
     pub(crate) width: f32,
+    pub(crate) theme: Theme,
 }
 
 impl TextInput {
@@ -150,25 +152,25 @@ impl Widget for TextInput {
     }
 
     fn paint_self(&self, rect: Rect, out: &mut Vec<DrawCommand>) {
-        let border_color = if self.focused { Color::rgb(0.21, 0.43, 0.86) } else { Color::rgb(0.76, 0.78, 0.82) };
+        let border_color = if self.focused { self.theme.primary } else { self.theme.muted };
         let pad = 10.0_f32;
-        out.push(DrawCommand::Rect { rect, color: border_color, corner_radius: 7.0 });
+        out.push(DrawCommand::Rect { rect, color: border_color, corner_radius: self.theme.radius_md - 1.0 });
         let inner = Rect { x: rect.x + 1.5, y: rect.y + 1.5, width: rect.width - 3.0, height: rect.height - 3.0 };
-        out.push(DrawCommand::Rect { rect: inner, color: Color::rgb(1.0, 1.0, 1.0), corner_radius: 6.0 });
+        out.push(DrawCommand::Rect { rect: inner, color: self.theme.surface, corner_radius: self.theme.radius_md - 2.0 });
         let val = self.value.get();
         let text_y = rect.y + (rect.height - self.font_size) / 2.0;
         if val.is_empty() {
             out.push(DrawCommand::Text { x: rect.x + pad, y: text_y, content: self.placeholder.clone(),
-                size: self.font_size, color: Color::rgb(0.6, 0.62, 0.66) });
+                size: self.font_size, color: self.theme.muted });
         } else {
             out.push(DrawCommand::Text { x: rect.x + pad, y: text_y, content: val,
-                size: self.font_size, color: Color::rgb(0.08, 0.08, 0.10) });
+                size: self.font_size, color: self.theme.on_surface });
         }
         if self.focused {
             let cx = rect.x + pad + self.cursor_x();
             out.push(DrawCommand::Rect {
                 rect: Rect { x: cx, y: text_y, width: 2.0, height: self.font_size },
-                color: Color::rgb(0.21, 0.43, 0.86), corner_radius: 0.0,
+                color: self.theme.primary, corner_radius: 0.0,
             });
         }
     }
@@ -209,6 +211,7 @@ pub struct Checkbox {
     pub(crate) label_text: String,
     pub(crate) checked: Signal<bool>,
     pub(crate) font_size: f32,
+    pub(crate) theme: Theme,
 }
 
 impl Widget for Checkbox {
@@ -226,30 +229,30 @@ impl Widget for Checkbox {
 
         let outer = Rect { x: rect.x, y: by, width: box_size, height: box_size };
         let border_color = if self.checked.get() {
-            Color::rgb(0.21, 0.43, 0.86)
+            self.theme.primary
         } else {
-            Color::rgb(0.72, 0.74, 0.78)
+            self.theme.muted
         };
-        out.push(DrawCommand::Rect { rect: outer, color: border_color, corner_radius: 4.0 });
+        out.push(DrawCommand::Rect { rect: outer, color: border_color, corner_radius: self.theme.radius_sm });
 
         let inner = Rect { x: outer.x + 2.0, y: outer.y + 2.0, width: outer.width - 4.0, height: outer.height - 4.0 };
         if self.checked.get() {
-            out.push(DrawCommand::Rect { rect: inner, color: Color::rgb(0.21, 0.43, 0.86), corner_radius: 2.0 });
+            out.push(DrawCommand::Rect { rect: inner, color: self.theme.primary, corner_radius: (self.theme.radius_sm - 2.0).max(0.0) });
             let mark = Rect {
                 x: inner.x + inner.width * 0.2, y: inner.y + inner.height * 0.2,
                 width: inner.width * 0.6, height: inner.height * 0.6,
             };
-            out.push(DrawCommand::Rect { rect: mark, color: Color::WHITE, corner_radius: 1.0 });
+            out.push(DrawCommand::Rect { rect: mark, color: self.theme.on_primary, corner_radius: 1.0 });
         } else {
-            out.push(DrawCommand::Rect { rect: inner, color: Color::WHITE, corner_radius: 2.0 });
+            out.push(DrawCommand::Rect { rect: inner, color: self.theme.surface, corner_radius: (self.theme.radius_sm - 2.0).max(0.0) });
         }
 
         if !self.label_text.is_empty() {
-            let tx = rect.x + box_size + 8.0;
+            let tx = rect.x + box_size + self.theme.spacing;
             let ty = rect.y + (rect.height - self.font_size) / 2.0;
             out.push(DrawCommand::Text {
                 x: tx, y: ty, content: self.label_text.clone(),
-                size: self.font_size, color: Color::rgb(0.08, 0.08, 0.10),
+                size: self.font_size, color: self.theme.on_surface,
             });
         }
     }
@@ -272,6 +275,7 @@ pub struct Slider {
     pub(crate) value: Signal<f32>,
     pub(crate) min: f32,
     pub(crate) max: f32,
+    pub(crate) theme: Theme,
 }
 
 impl Widget for Slider {
@@ -311,28 +315,28 @@ impl Widget for Slider {
 
         out.push(DrawCommand::Rect {
             rect: Rect { x: rect.x, y: track_y, width: rect.width, height: track_h },
-            color: Color::rgb(0.85, 0.87, 0.90), corner_radius: 2.0,
+            color: self.theme.muted, corner_radius: track_h / 2.0,
         });
 
         let fill_w = rect.width * ratio;
         if fill_w > 0.0 {
             out.push(DrawCommand::Rect {
                 rect: Rect { x: rect.x, y: track_y, width: fill_w, height: track_h },
-                color: Color::rgb(0.21, 0.43, 0.86), corner_radius: 2.0,
+                color: self.theme.primary, corner_radius: track_h / 2.0,
             });
         }
 
-        let thumb_r = 8.0;
+        let thumb_r = self.theme.spacing;
         let thumb_cx = rect.x + rect.width * ratio;
         let thumb_x = (thumb_cx - thumb_r).max(rect.x);
         let thumb_y = rect.y + rect.height / 2.0 - thumb_r;
         out.push(DrawCommand::Rect {
             rect: Rect { x: thumb_x, y: thumb_y, width: thumb_r * 2.0, height: thumb_r * 2.0 },
-            color: Color::WHITE, corner_radius: thumb_r,
+            color: self.theme.surface, corner_radius: thumb_r,
         });
         out.push(DrawCommand::Rect {
             rect: Rect { x: thumb_x + 2.0, y: thumb_y + 2.0, width: thumb_r * 2.0 - 4.0, height: thumb_r * 2.0 - 4.0 },
-            color: Color::rgb(0.21, 0.43, 0.86), corner_radius: thumb_r - 2.0,
+            color: self.theme.primary, corner_radius: (thumb_r - 2.0).max(0.0),
         });
     }
 }

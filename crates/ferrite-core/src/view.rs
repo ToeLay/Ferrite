@@ -2,6 +2,7 @@ use crate::widgets::{self, Container, Text, Button, TextInput, Spacer, Divider, 
 use crate::{request_repaint, Color, DrawCommand, Widget};
 use ferrite_layout::{AlignItems, Direction, Edges, JustifyContent, LayoutTree, NodeId, Rect, Size, Style};
 use ferrite_reactive::{create_effect, Signal};
+use crate::theme::Theme;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -183,11 +184,12 @@ impl ViewDescriptor for TextDescriptor {
 }
 
 pub fn text(content: &str) -> AnyView {
+    let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
     AnyView {
         inner: Box::new(TextDescriptor {
             content: content.to_string(),
             font_size: widgets::DEFAULT_TEXT_SIZE,
-            color: Color::BLACK,
+            color: theme.on_surface,
             overrides: StyleOverrides::default(),
         }),
     }
@@ -223,11 +225,12 @@ impl ViewDescriptor for LabelDescriptor {
 }
 
 pub fn label(f: impl Fn() -> String + 'static) -> AnyView {
+    let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
     AnyView {
         inner: Box::new(LabelDescriptor {
             compute: Box::new(f),
             font_size: widgets::DEFAULT_TEXT_SIZE,
-            color: Color::BLACK,
+            color: theme.on_surface,
             overrides: StyleOverrides::default(),
         }),
     }
@@ -262,12 +265,13 @@ impl ViewDescriptor for ButtonDescriptor {
 }
 
 pub fn button(label: &str, on_click: impl FnMut() + 'static) -> AnyView {
+    let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
     AnyView {
         inner: Box::new(ButtonDescriptor {
             label: label.to_string(),
             on_click: Box::new(on_click),
-            background: Color::rgb(0.21, 0.43, 0.86),
-            foreground: Color::WHITE,
+            background: theme.primary,
+            foreground: theme.on_primary,
             overrides: StyleOverrides::default(),
         }),
     }
@@ -289,9 +293,10 @@ impl ViewDescriptor for InputDescriptor {
         let mut style = widgets::text_input_style(input_width, font_size);
         overrides.apply_to(&mut style);
         let node = tree.new_leaf(style);
+        let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
         Box::new(TextInput {
             node, value, placeholder, focused: false, cursor: 0,
-            font_size, width: input_width,
+            font_size, width: input_width, theme,
         })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
@@ -406,9 +411,10 @@ impl ViewDescriptor for DividerDescriptor {
 }
 
 pub fn divider() -> AnyView {
+    let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
     AnyView {
         inner: Box::new(DividerDescriptor {
-            color: Color::rgb(0.85, 0.87, 0.90),
+            color: theme.muted,
             overrides: StyleOverrides::default(),
         }),
     }
@@ -429,7 +435,8 @@ impl ViewDescriptor for CheckboxDescriptor {
         let mut style = widgets::checkbox_style(label.len(), font_size);
         overrides.apply_to(&mut style);
         let node = tree.new_leaf(style);
-        Box::new(Checkbox { node, label_text: label, checked, font_size })
+        let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
+        Box::new(Checkbox { node, label_text: label, checked, font_size, theme })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
     fn set_font_size(&mut self, s: f32) { self.font_size = s; }
@@ -462,7 +469,8 @@ impl ViewDescriptor for SliderDescriptor {
         let mut style = widgets::slider_style(slider_width);
         overrides.apply_to(&mut style);
         let node = tree.new_leaf(style);
-        Box::new(Slider { node, value, min, max })
+        let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
+        Box::new(Slider { node, value, min, max, theme })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
 }

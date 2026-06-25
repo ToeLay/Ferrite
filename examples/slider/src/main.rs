@@ -1,6 +1,9 @@
 use ferrite::prelude::*;
 
 fn main() {
+    provide(Theme::dark());
+    let theme = Theme::dark(); // Just for the main app background
+
     let r = use_state(0.5f32);
     let g = use_state(0.5f32);
     let b = use_state(0.5f32);
@@ -39,10 +42,7 @@ fn main() {
     ])
     .padding(30.0)
     .gap(15.0)
-    // The main window background gets dynamically updated to the mixed color via this wrapper logic.
-    // However, window background isn't reactive in this framework yet (it is statically set in config).
-    // So we'll just have the col itself be the background container filling the window.
-    .background(Color::rgb(0.9, 0.9, 0.95))
+    .background(theme.surface)
     .flex_grow(1.0); // fill window
 
     run("Slider Test", (400, 300), app);

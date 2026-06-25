@@ -4,6 +4,7 @@ pub mod context;
 mod dirty;
 mod draw;
 pub mod event;
+pub mod theme;
 pub mod view;
 mod widget;
 pub mod widgets; // This needs to be public because Widget implementors might need access to it, but its constructors are now pub(crate)
@@ -15,6 +16,7 @@ pub use draw::DrawCommand;
 pub use event::{KeyCode, KeyEvent, Modifiers};
 pub use view::{AnyView, View};
 pub use widget::Widget;
+pub use theme::Theme;
 
 pub use ferrite_layout::{AlignItems, Direction, Edges, JustifyContent, NodeId, Rect, Size, Style};
 pub use ferrite_layout::LayoutTree;

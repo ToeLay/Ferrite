@@ -19,14 +19,17 @@ pub fn provide<T: 'static>(value: T) {
     CONTEXT.with(|c| c.borrow_mut().insert(TypeId::of::<T>(), Box::new(value)));
 }
 
-/// Injects a value of type `T` from the context. Panics if no provider for `T` is found.
 pub fn inject<T: Clone + 'static>() -> T {
+    try_inject::<T>().expect("no provider found for this type — call provide::<T>() first")
+}
+
+/// Attempts to inject a value of type `T` from the context, returning `None` if not found.
+pub fn try_inject<T: Clone + 'static>() -> Option<T> {
     CONTEXT.with(|c| {
         c.borrow()
             .get(&TypeId::of::<T>())
             .and_then(|v| v.downcast_ref::<T>())
             .cloned()
-            .expect("no provider found for this type — call provide::<T>() first")
     })
 }
 
