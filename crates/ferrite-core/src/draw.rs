@@ -9,4 +9,6 @@ use ferrite_layout::Rect;
 pub enum DrawCommand {
     Rect { rect: Rect, color: Color, corner_radius: f32 },
     Text { x: f32, y: f32, content: String, size: f32, color: Color },
+    PushClip { rect: Rect },
+    PopClip,
 }

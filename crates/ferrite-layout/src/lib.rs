@@ -65,6 +65,25 @@ impl Edges {
     }
 }
 
+/// Controls how overflowing content is handled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Overflow {
+    #[default]
+    Visible,
+    Hidden,
+    Scroll,
+}
+
+impl From<Overflow> for taffy::Overflow {
+    fn from(o: Overflow) -> Self {
+        match o {
+            Overflow::Visible => taffy::Overflow::Visible,
+            Overflow::Hidden => taffy::Overflow::Hidden,
+            Overflow::Scroll => taffy::Overflow::Scroll,
+        }
+    }
+}
+
 /// The subset of flexbox a widget actually needs to set.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Style {
@@ -81,6 +100,8 @@ pub struct Style {
     pub flex_shrink: f32,
     pub justify_content: JustifyContent,
     pub align_items: AlignItems,
+    pub overflow_x: Overflow,
+    pub overflow_y: Overflow,
 }
 
 impl Default for Style {
@@ -100,6 +121,8 @@ impl Default for Style {
             flex_shrink: 1.0,
             justify_content: JustifyContent::Start,
             align_items: AlignItems::Stretch,
+            overflow_x: Overflow::Visible,
+            overflow_y: Overflow::Visible,
         }
     }
 }
@@ -143,6 +166,7 @@ fn to_taffy_style(s: &Style) -> taffy::Style {
             bottom: length(s.margin.bottom),
         },
         gap: taffy::Size { width: length(s.gap), height: length(s.gap) },
+        overflow: taffy::Point { x: s.overflow_x.into(), y: s.overflow_y.into() },
         flex_grow: s.flex_grow,
         flex_shrink: s.flex_shrink,
         justify_content: Some(match s.justify_content {

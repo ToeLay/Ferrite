@@ -17,7 +17,7 @@
 use ferrite_core::{Color as FColor, DrawCommand, Rect as FRect};
 use fontdue::{Font, FontSettings};
 use std::sync::OnceLock;
-use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect as SkRect, Transform};
+use tiny_skia::{FillRule, Mask, Paint, PathBuilder, Pixmap, Rect as SkRect, Transform};
 
 static FONT_BYTES: &[u8] = include_bytes!("../assets/IBMPlexMono-Regular.ttf");
 
@@ -42,13 +42,86 @@ pub fn text_measure_fn() -> impl Fn(&str, f32) -> (f32, f32) {
 pub fn render_to_pixmap(commands: &[DrawCommand], width: u32, height: u32, background: FColor) -> Pixmap {
     let mut pixmap = Pixmap::new(width.max(1), height.max(1)).expect("non-zero pixmap size");
     pixmap.fill(to_skia_color(background));
+    
+    let mut clip_stack: Vec<FRect> = Vec::new();
+    let mut active_clip: Option<FRect> = None;
+    let mut clip_mask = Mask::new(width.max(1), height.max(1)).expect("non-zero mask size");
+    let mut mask_active = false;
+
     for cmd in commands {
         match cmd {
-            DrawCommand::Rect { rect, color, corner_radius } => draw_rect(&mut pixmap, *rect, *color, *corner_radius),
-            DrawCommand::Text { x, y, content, size, color } => draw_text(&mut pixmap, *x, *y, content, *size, *color),
+            DrawCommand::PushClip { rect } => {
+                let new_clip = if let Some(prev) = active_clip {
+                    intersect_rect(prev, *rect).unwrap_or(FRect { x: 0.0, y: 0.0, width: 0.0, height: 0.0 })
+                } else {
+                    *rect
+                };
+                clip_stack.push(new_clip);
+                active_clip = Some(new_clip);
+                update_clip_mask(&mut clip_mask, new_clip, width, height);
+                mask_active = true;
+            }
+            DrawCommand::PopClip => {
+                clip_stack.pop();
+                active_clip = clip_stack.last().copied();
+                if let Some(clip) = active_clip {
+                    update_clip_mask(&mut clip_mask, clip, width, height);
+                    mask_active = true;
+                } else {
+                    mask_active = false;
+                }
+            }
+            DrawCommand::Rect { rect, color, corner_radius } => {
+                let mut draw_r = *rect;
+                if let Some(c) = active_clip {
+                    if rect.x > c.x + c.width || rect.y > c.y + c.height || rect.x + rect.width < c.x || rect.y + rect.height < c.y {
+                        continue;
+                    }
+                    if *corner_radius <= 0.0 {
+                        if let Some(intersected) = intersect_rect(*rect, c) {
+                            draw_r = intersected;
+                        }
+                    }
+                }
+                let mask = if mask_active && *corner_radius > 0.0 { Some(&clip_mask) } else { None };
+                draw_rect(&mut pixmap, draw_r, *color, *corner_radius, mask)
+            }
+            DrawCommand::Text { x, y, content, size, color } => {
+                if let Some(c) = active_clip {
+                    // Approximate text bounds
+                    let width = content.chars().count() as f32 * *size * 0.62;
+                    if *x > c.x + c.width || *y > c.y + c.height || *x + width < c.x || *y - *size < c.y {
+                        continue;
+                    }
+                }
+                draw_text(&mut pixmap, *x, *y, content, *size, *color, active_clip)
+            }
         }
     }
     pixmap
+}
+
+fn intersect_rect(a: FRect, b: FRect) -> Option<FRect> {
+    let x = a.x.max(b.x);
+    let y = a.y.max(b.y);
+    let right = (a.x + a.width).min(b.x + b.width);
+    let bottom = (a.y + a.height).min(b.y + b.height);
+    if x < right && y < bottom {
+        Some(FRect { x, y, width: right - x, height: bottom - y })
+    } else {
+        None
+    }
+}
+
+fn update_clip_mask(clip_mask: &mut Mask, rect: FRect, width: u32, height: u32) {
+    clip_mask.clear();
+    if rect.width <= 0.0 || rect.height <= 0.0 {
+        return;
+    }
+    if let Some(sk_rect) = SkRect::from_xywh(rect.x, rect.y, rect.width, rect.height) {
+        let path = PathBuilder::from_rect(sk_rect);
+        clip_mask.fill_path(&path, FillRule::Winding, false, Transform::identity());
+    }
 }
 
 fn to_skia_color(c: FColor) -> tiny_skia::Color {
@@ -56,19 +129,20 @@ fn to_skia_color(c: FColor) -> tiny_skia::Color {
         .unwrap_or(tiny_skia::Color::BLACK)
 }
 
-fn draw_rect(pixmap: &mut Pixmap, rect: FRect, color: FColor, radius: f32) {
+fn draw_rect(pixmap: &mut Pixmap, rect: FRect, color: FColor, radius: f32, clip: Option<&Mask>) {
     let mut paint = Paint::default();
     paint.set_color(to_skia_color(color));
     paint.anti_alias = true;
 
-    let path = if radius <= 0.0 {
+    if radius <= 0.0 {
         let Some(r) = SkRect::from_xywh(rect.x, rect.y, rect.width, rect.height) else { return };
-        Some(PathBuilder::from_rect(r))
+        pixmap.fill_rect(r, &paint, Transform::identity(), clip);
     } else {
-        rounded_rect_path(rect, radius.min(rect.width / 2.0).min(rect.height / 2.0))
-    };
-    let Some(path) = path else { return };
-    pixmap.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
+        let path = rounded_rect_path(rect, radius.min(rect.width / 2.0).min(rect.height / 2.0));
+        if let Some(path) = path {
+            pixmap.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), clip);
+        }
+    }
 }
 
 /// Builds a rounded-rect path by hand: tiny-skia's high-level API doesn't
@@ -92,7 +166,7 @@ fn rounded_rect_path(rect: FRect, r: f32) -> Option<tiny_skia::Path> {
     pb.finish()
 }
 
-fn draw_text(pixmap: &mut Pixmap, x: f32, y: f32, content: &str, size: f32, color: FColor) {
+fn draw_text(pixmap: &mut Pixmap, x: f32, y: f32, content: &str, size: f32, color: FColor, clip: Option<FRect>) {
     let f = font();
     let (r, g, b) = ((color.r * 255.0) as u8, (color.g * 255.0) as u8, (color.b * 255.0) as u8);
     let mut pen_x = x;
@@ -101,9 +175,19 @@ fn draw_text(pixmap: &mut Pixmap, x: f32, y: f32, content: &str, size: f32, colo
     let baseline_y = y + size * 0.8;
 
     for ch in content.chars() {
-        let (metrics, bitmap) = f.rasterize(ch, size);
+        let metrics = f.metrics(ch, size);
         let glyph_x = pen_x + metrics.xmin as f32;
         let glyph_y = baseline_y - metrics.ymin as f32 - metrics.height as f32;
+        
+        // Fast clip cull per character
+        if let Some(c) = clip {
+            if glyph_x > c.x + c.width || glyph_x + (metrics.width as f32) < c.x || glyph_y > c.y + c.height || glyph_y + (metrics.height as f32) < c.y {
+                pen_x += metrics.advance_width;
+                continue;
+            }
+        }
+
+        let (_, bitmap) = f.rasterize(ch, size);
 
         for row in 0..metrics.height {
             for col in 0..metrics.width {
@@ -113,6 +197,11 @@ fn draw_text(pixmap: &mut Pixmap, x: f32, y: f32, content: &str, size: f32, colo
                 }
                 let px = (glyph_x + col as f32) as i32;
                 let py = (glyph_y + row as f32) as i32;
+                if let Some(c) = clip {
+                    if (px as f32) < c.x || (px as f32) >= c.x + c.width || (py as f32) < c.y || (py as f32) >= c.y + c.height {
+                        continue;
+                    }
+                }
                 blend_pixel(pixmap, px, py, r, g, b, coverage, color.a);
             }
         }

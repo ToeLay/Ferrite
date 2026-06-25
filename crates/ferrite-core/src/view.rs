@@ -1,4 +1,4 @@
-use crate::widgets::{self, Container, Text, Button, TextInput, Spacer, Divider, Checkbox, Slider};
+use crate::widgets::{self, Container, Text, Button, TextInput, Spacer, Divider, Checkbox, Slider, Scroll};
 use crate::{request_repaint, Color, DrawCommand, Widget};
 use ferrite_layout::{AlignItems, Direction, Edges, JustifyContent, LayoutTree, NodeId, Rect, Size, Style};
 use ferrite_reactive::{create_effect, Signal};
@@ -10,8 +10,8 @@ use std::rc::Rc;
 
 #[derive(Default)]
 struct StyleOverrides {
-    width: Option<f32>,
-    height: Option<f32>,
+    width: Option<Size>,
+    height: Option<Size>,
     padding: Option<Edges>,
     margin: Option<Edges>,
     gap: Option<f32>,
@@ -23,8 +23,8 @@ struct StyleOverrides {
 
 impl StyleOverrides {
     fn apply_to(&self, style: &mut Style) {
-        if let Some(w) = self.width { style.width = Size::Px(w); }
-        if let Some(h) = self.height { style.height = Size::Px(h); }
+        if let Some(w) = self.width { style.width = w; }
+        if let Some(h) = self.height { style.height = h; }
         if let Some(p) = self.padding { style.padding = p; }
         if let Some(m) = self.margin { style.margin = m; }
         if let Some(g) = self.gap { style.gap = g; }
@@ -87,11 +87,16 @@ impl AnyView {
         self
     }
     pub fn width(mut self, w: f32) -> Self {
-        self.inner.style_overrides_mut().width = Some(w);
+        self.inner.style_overrides_mut().width = Some(Size::Px(w));
         self
     }
     pub fn height(mut self, h: f32) -> Self {
-        self.inner.style_overrides_mut().height = Some(h);
+        self.inner.style_overrides_mut().height = Some(Size::Px(h));
+        self
+    }
+    pub fn fill(mut self) -> Self {
+        self.inner.style_overrides_mut().width = Some(Size::Percent(100.0));
+        self.inner.style_overrides_mut().height = Some(Size::Percent(100.0));
         self
     }
     pub fn flex_grow(mut self, g: f32) -> Self {
@@ -480,6 +485,46 @@ pub fn slider(value: Signal<f32>, min: f32, max: f32) -> AnyView {
         inner: Box::new(SliderDescriptor {
             value, min, max,
             slider_width: 200.0,
+            overrides: StyleOverrides::default(),
+        }),
+    }
+}
+
+// ── ScrollDescriptor ───────────────────────────────────────────────────────────
+
+struct ScrollDescriptor {
+    child: AnyView,
+    overrides: StyleOverrides,
+}
+
+impl ViewDescriptor for ScrollDescriptor {
+    fn build(self: Box<Self>, tree: &mut LayoutTree) -> Box<dyn Widget> {
+        let ScrollDescriptor { child, overrides } = *self;
+        let built_child = child.flex_shrink(0.0).build(tree);
+        let mut style = Style {
+            overflow_x: ferrite_layout::Overflow::Scroll,
+            overflow_y: ferrite_layout::Overflow::Scroll,
+            flex_grow: 1.0,
+            ..Default::default()
+        };
+        overrides.apply_to(&mut style);
+        
+        let node = tree.new_with_children(style, &[built_child.node_id()]);
+        
+        Box::new(Scroll {
+            node,
+            child: built_child,
+            scroll_x: 0.0,
+            scroll_y: 0.0,
+        })
+    }
+    fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
+}
+
+pub fn scroll(child: impl View + 'static) -> AnyView {
+    AnyView {
+        inner: Box::new(ScrollDescriptor {
+            child: child.view(),
             overrides: StyleOverrides::default(),
         }),
     }

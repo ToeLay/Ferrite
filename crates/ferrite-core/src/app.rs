@@ -54,6 +54,10 @@ impl App {
         self.root.drag_at(&self.tree, 0.0, 0.0, x, y)
     }
 
+    pub fn scroll(&mut self, px: f32, py: f32, dx: f32, dy: f32) -> bool {
+        self.root.scroll_at(&self.tree, 0.0, 0.0, px, py, dx, dy)
+    }
+
     pub fn key_event(&mut self, event: KeyEvent) -> bool {
         if let Some(focused) = self.focused {
             self.root.dispatch_key(focused, &event)

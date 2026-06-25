@@ -344,3 +344,103 @@ impl Widget for Slider {
 pub(crate) fn slider_style(width: f32) -> Style {
     Style { width: Size::Px(width), height: Size::Px(24.0), ..Default::default() }
 }
+
+// ── Scroll ───────────────────────────────────────────────────────────────────
+
+pub struct Scroll {
+    pub(crate) node: NodeId,
+    pub(crate) child: Box<dyn Widget>,
+    pub(crate) scroll_x: f32,
+    pub(crate) scroll_y: f32,
+}
+
+impl Widget for Scroll {
+    fn node_id(&self) -> NodeId { self.node }
+    fn children(&self) -> &[Box<dyn Widget>] { std::slice::from_ref(&self.child) }
+    fn children_mut(&mut self) -> &mut [Box<dyn Widget>] { std::slice::from_mut(&mut self.child) }
+
+    fn paint(&self, tree: &LayoutTree, ox: f32, oy: f32, out: &mut Vec<DrawCommand>) {
+        let r = tree.layout(self.node_id());
+        let abs = Rect { x: ox + r.x, y: oy + r.y, width: r.width, height: r.height };
+        
+        out.push(DrawCommand::PushClip { rect: abs });
+        self.child.paint(tree, abs.x - self.scroll_x, abs.y - self.scroll_y, out);
+        out.push(DrawCommand::PopClip);
+
+        let child_layout = tree.layout(self.child.node_id());
+        let max_y = (child_layout.height - r.height).max(0.0);
+        if max_y > 0.0 {
+            let thumb_height = (r.height / child_layout.height * r.height).max(20.0);
+            let thumb_y = (self.scroll_y / max_y) * (r.height - thumb_height);
+            out.push(DrawCommand::Rect {
+                rect: Rect {
+                    x: abs.x + abs.width - 8.0,
+                    y: abs.y + thumb_y,
+                    width: 6.0,
+                    height: thumb_height,
+                },
+                color: crate::Color::rgba(0.5, 0.5, 0.5, 0.5),
+                corner_radius: 3.0,
+            });
+        }
+    }
+
+    fn click_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
+        let r = tree.layout(self.node_id());
+        let ax = ox + r.x; let ay = oy + r.y;
+        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return false; }
+        
+        if self.child.click_at(tree, ax - self.scroll_x, ay - self.scroll_y, px, py) {
+            return true;
+        }
+        self.on_click()
+    }
+
+    fn drag_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
+        let r = tree.layout(self.node_id());
+        let ax = ox + r.x; let ay = oy + r.y;
+        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return false; }
+        
+        if self.child.drag_at(tree, ax - self.scroll_x, ay - self.scroll_y, px, py) {
+            return true;
+        }
+        false
+    }
+
+    fn scroll_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32, dx: f32, dy: f32) -> bool {
+        let r = tree.layout(self.node_id());
+        let ax = ox + r.x; let ay = oy + r.y;
+        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return false; }
+        
+        if self.child.scroll_at(tree, ax - self.scroll_x, ay - self.scroll_y, px, py, dx, dy) {
+            return true;
+        }
+        
+        let child_layout = tree.layout(self.child.node_id());
+        let max_x = (child_layout.width - r.width).max(0.0);
+        let max_y = (child_layout.height - r.height).max(0.0);
+        
+        let new_x = (self.scroll_x - dx).clamp(0.0, max_x);
+        let new_y = (self.scroll_y - dy).clamp(0.0, max_y);
+        
+        if (new_x - self.scroll_x).abs() > 0.001 || (new_y - self.scroll_y).abs() > 0.001 {
+            self.scroll_x = new_x;
+            self.scroll_y = new_y;
+            request_repaint();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn find_focusable_at(&self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<NodeId> {
+        let r = tree.layout(self.node_id());
+        let ax = ox + r.x; let ay = oy + r.y;
+        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return None; }
+        
+        if let Some(found) = self.child.find_focusable_at(tree, ax - self.scroll_x, ay - self.scroll_y, px, py) {
+            return Some(found);
+        }
+        if self.is_focusable() { Some(self.node_id()) } else { None }
+    }
+}

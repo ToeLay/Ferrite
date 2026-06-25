@@ -3,7 +3,7 @@ use softbuffer::{Context, Surface};
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use winit::application::ApplicationHandler;
-use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, OwnedDisplayHandle};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowAttributes, WindowId};
@@ -84,6 +84,14 @@ impl ApplicationHandler for Runner {
                 self.drag_active = false;
             }
 
+            WindowEvent::MouseWheel { delta, .. } => {
+                let (dx, dy) = match delta {
+                    MouseScrollDelta::LineDelta(x, y) => (x * 20.0, y * 20.0),
+                    MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
+                };
+                self.app.scroll(self.cursor_pos.0 as f32, self.cursor_pos.1 as f32, dx, dy);
+            }
+
             WindowEvent::KeyboardInput { event: key_event, .. } => {
                 if key_event.state != ElementState::Pressed { return; }
                 if let Some(fe) = map_key(&key_event.logical_key, self.modifiers) {
@@ -111,14 +119,17 @@ impl Runner {
         let size = window.inner_size();
         let (w, h) = (size.width.max(1), size.height.max(1));
         let commands = self.app.render(w as f32, h as f32);
+        
         let pixmap = ferrite_render_skia::render_to_pixmap(&commands, w, h, self.config.background);
+        
         let Some(surface) = &mut self.surface else { return };
         let Ok(mut buffer) = surface.buffer_mut() else { return };
+        
         let src = pixmap.data();
-        for (i, px) in buffer.iter_mut().enumerate() {
-            let o = i * 4;
-            *px = ((src[o] as u32) << 16) | ((src[o + 1] as u32) << 8) | src[o + 2] as u32;
+        for (px, chunk) in buffer.iter_mut().zip(src.chunks_exact(4)) {
+            *px = ((chunk[0] as u32) << 16) | ((chunk[1] as u32) << 8) | chunk[2] as u32;
         }
+        
         let _ = buffer.present();
     }
 }

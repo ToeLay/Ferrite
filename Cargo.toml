@@ -1,16 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/ferrite-reactive",
-    "crates/ferrite-layout",
-    "crates/ferrite-core",
-    "crates/ferrite-render-skia",
-    "crates/ferrite-window",
-    "crates/ferrite",
+    "crates/*",
     "examples/counter",
     "examples/window_counter",
     "examples/text_input",
     "examples/slider",
+    "examples/scroll"
 ]
 
 [workspace.package]

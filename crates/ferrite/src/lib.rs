@@ -8,7 +8,7 @@ pub use ferrite_reactive::{create_effect, create_memo, create_signal, Memo, Scop
 
 // New declarative API
 pub use ferrite_core::{AnyView, View};
-pub use ferrite_core::{text, label, button, input, col, row, spacer, divider, checkbox, slider, switch};
+pub use ferrite_core::{text, label, button, input, col, row, spacer, divider, checkbox, slider, switch, scroll};
 pub use ferrite_core::{provide, inject, reset_context, Theme};
 
 // Alias create_signal to use_state for component-local state idiom
@@ -18,7 +18,7 @@ pub mod render { pub use ferrite_render_skia::render_to_pixmap; }
 pub mod window  { pub use ferrite_window::{run as run_window, WindowConfig}; }
 
 pub fn run(title: &str, size: (u32, u32), root: impl View) {
-    let root_view = root.view();
+    let root_view = root.view().fill();
     let mut tree = LayoutTree::new();
     tree.set_text_measure(ferrite_render_skia::text_measure_fn());
     let widget = root_view.build(&mut tree);
@@ -35,7 +35,7 @@ pub fn run(title: &str, size: (u32, u32), root: impl View) {
 }
 
 pub fn run_with(config: ferrite_window::WindowConfig, root: impl View) {
-    let root_view = root.view();
+    let root_view = root.view().fill();
     let mut tree = LayoutTree::new();
     tree.set_text_measure(ferrite_render_skia::text_measure_fn());
     let widget = root_view.build(&mut tree);
@@ -46,7 +46,7 @@ pub fn run_with(config: ferrite_window::WindowConfig, root: impl View) {
 pub mod prelude {
     // Declarative API (primary)
     pub use crate::{
-        text, label, button, input, col, row, spacer, divider, checkbox, slider, switch,
+        text, label, button, input, col, row, spacer, divider, checkbox, slider, switch, scroll,
         AnyView, View, Theme,
         provide, inject, reset_context, use_state,
         run, run_with,
