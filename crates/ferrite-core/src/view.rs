@@ -1,7 +1,7 @@
 use crate::widgets::{self, Container, Text, Button, TextInput, Spacer, Divider, Checkbox, Slider};
 use crate::{request_repaint, Color, DrawCommand, Widget};
 use ferrite_layout::{AlignItems, Direction, Edges, JustifyContent, LayoutTree, NodeId, Rect, Size, Style};
-use ferrite_reactive::{create_effect, create_signal, Signal};
+use ferrite_reactive::{create_effect, Signal};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -166,13 +166,13 @@ struct TextDescriptor {
 impl ViewDescriptor for TextDescriptor {
     fn build(self: Box<Self>, tree: &mut LayoutTree) -> Box<dyn Widget> {
         let TextDescriptor { content, font_size, color, overrides } = *self;
-        let char_count = content.chars().count() as f32;
-        let mut style = widgets::text_node_style(char_count, font_size);
+        let mut style = Style::default();
         overrides.apply_to(&mut style);
-        let node = tree.new_leaf(style);
+        let content_rc = Rc::new(RefCell::new(content));
+        let node = tree.new_text_leaf(style, content_rc.clone(), font_size);
         Box::new(Text {
             node,
-            content: Rc::new(RefCell::new(content)),
+            content: content_rc,
             color,
             size: font_size,
         })
@@ -206,13 +206,15 @@ impl ViewDescriptor for LabelDescriptor {
     fn build(self: Box<Self>, tree: &mut LayoutTree) -> Box<dyn Widget> {
         let LabelDescriptor { compute, font_size, color, overrides } = *self;
         let initial = compute();
-        let char_count = initial.chars().count() as f32;
-        let mut style = widgets::text_node_style(char_count, font_size);
+        let mut style = Style::default();
         overrides.apply_to(&mut style);
-        let node = tree.new_leaf(style);
         let content = Rc::new(RefCell::new(initial));
+        let node = tree.new_text_leaf(style, content.clone(), font_size);
         let c2 = content.clone();
-        create_effect(move || { *c2.borrow_mut() = compute(); request_repaint(); });
+        create_effect(move || { 
+            *c2.borrow_mut() = compute(); 
+            crate::dirty::request_layout(node); 
+        });
         Box::new(Text { node, content, color, size: font_size })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
@@ -327,7 +329,7 @@ impl ViewDescriptor for ContainerDescriptor {
         let ids: Vec<NodeId> = built.iter().map(|c| c.node_id()).collect();
         let node = tree.new_with_children(style, &ids);
         
-        let mut c = Container { 
+        let c = Container { 
             node, 
             children: built, 
             background: bg,

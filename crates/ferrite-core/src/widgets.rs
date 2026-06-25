@@ -1,5 +1,5 @@
 use crate::{request_repaint, Color, DrawCommand, KeyCode, KeyEvent, Widget};
-use ferrite_layout::{Direction, LayoutTree, NodeId, Rect, Size, Style};
+use ferrite_layout::{LayoutTree, NodeId, Rect, Size, Style};
 use ferrite_reactive::Signal;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -27,20 +27,6 @@ impl Widget for Container {
     }
 }
 
-pub(crate) fn container(tree: &mut LayoutTree, mut style: Style, dir: Direction, children: Vec<Box<dyn Widget>>) -> Container {
-    style.direction = dir;
-    let ids: Vec<NodeId> = children.iter().map(|c| c.node_id()).collect();
-    let node = tree.new_with_children(style, &ids);
-    Container { node, children, background: None, corner_radius: 0.0 }
-}
-
-pub(crate) fn column(tree: &mut LayoutTree, style: Style, children: Vec<Box<dyn Widget>>) -> Container {
-    container(tree, style, Direction::Column, children)
-}
-pub(crate) fn row(tree: &mut LayoutTree, style: Style, children: Vec<Box<dyn Widget>>) -> Container {
-    container(tree, style, Direction::Row, children)
-}
-
 // ── Text ─────────────────────────────────────────────────────────────────────
 
 pub struct Text {
@@ -51,12 +37,6 @@ pub struct Text {
 }
 impl Text {
     pub fn color(mut self, color: Color) -> Self { self.color = color; self }
-    pub fn font_size(mut self, tree: &mut LayoutTree, size: f32) -> Self {
-        self.size = size;
-        let count = self.content.borrow().chars().count() as f32;
-        tree.set_style(self.node, text_node_style(count, size));
-        self
-    }
 }
 impl Widget for Text {
     fn node_id(&self) -> NodeId { self.node }
@@ -69,25 +49,7 @@ impl Widget for Text {
     }
 }
 
-pub(crate) fn text_node_style(char_count: f32, size: f32) -> Style {
-    Style { width: Size::Px(char_count * size * 0.62), height: Size::Px(size * 1.4), ..Default::default() }
-}
 pub(crate) const DEFAULT_TEXT_SIZE: f32 = 16.0;
-
-pub(crate) fn text(tree: &mut LayoutTree, content: impl Into<String>) -> Text {
-    let s = content.into();
-    let node = tree.new_leaf(text_node_style(s.chars().count() as f32, DEFAULT_TEXT_SIZE));
-    Text { node, content: Rc::new(RefCell::new(s)), color: Color::BLACK, size: DEFAULT_TEXT_SIZE }
-}
-
-pub(crate) fn text_dyn(tree: &mut LayoutTree, f: impl Fn() -> String + 'static) -> Text {
-    let initial = f();
-    let node = tree.new_leaf(text_node_style(initial.chars().count() as f32, DEFAULT_TEXT_SIZE));
-    let content = Rc::new(RefCell::new(initial));
-    let c2 = content.clone();
-    ferrite_reactive::create_effect(move || { *c2.borrow_mut() = f(); request_repaint(); });
-    Text { node, content, color: Color::BLACK, size: DEFAULT_TEXT_SIZE }
-}
 
 // ── Button ───────────────────────────────────────────────────────────────────
 
@@ -112,14 +74,6 @@ impl Widget for Button {
         });
     }
     fn on_click(&mut self) -> bool { (self.on_click)(); true }
-}
-
-pub(crate) fn button(tree: &mut LayoutTree, label: impl Into<String>, on_click: impl FnMut() + 'static) -> Button {
-    let node = tree.new_leaf(Style { width: Size::Px(56.0), height: Size::Px(56.0), ..Default::default() });
-    Button {
-        node, label: label.into(), on_click: Box::new(on_click),
-        background: Color::rgb(0.21, 0.43, 0.86), foreground: Color::WHITE,
-    }
 }
 
 // ── TextInput ────────────────────────────────────────────────────────────────
@@ -224,14 +178,6 @@ pub(crate) fn text_input_style(width: f32, font_size: f32) -> Style {
     Style { width: Size::Px(width), height: Size::Px(font_size * 2.4), ..Default::default() }
 }
 
-pub(crate) fn text_input(tree: &mut LayoutTree, value: Signal<String>, placeholder: impl Into<String>) -> TextInput {
-    const DEFAULT_WIDTH: f32 = 280.0;
-    const DEFAULT_FONT_SIZE: f32 = 16.0;
-    let node = tree.new_leaf(text_input_style(DEFAULT_WIDTH, DEFAULT_FONT_SIZE));
-    TextInput { node, value, placeholder: placeholder.into(), focused: false, cursor: 0,
-        font_size: DEFAULT_FONT_SIZE, width: DEFAULT_WIDTH }
-}
-
 // ── Spacer ───────────────────────────────────────────────────────────────────
 
 pub struct Spacer {
@@ -240,11 +186,6 @@ pub struct Spacer {
 
 impl Widget for Spacer {
     fn node_id(&self) -> NodeId { self.node }
-}
-
-pub(crate) fn spacer_widget(tree: &mut LayoutTree) -> Spacer {
-    let node = tree.new_leaf(Style { flex_grow: 1.0, ..Default::default() });
-    Spacer { node }
 }
 
 // ── Divider ──────────────────────────────────────────────────────────────────
@@ -259,11 +200,6 @@ impl Widget for Divider {
     fn paint_self(&self, rect: Rect, out: &mut Vec<DrawCommand>) {
         out.push(DrawCommand::Rect { rect, color: self.color, corner_radius: 0.0 });
     }
-}
-
-pub(crate) fn divider_widget(tree: &mut LayoutTree) -> Divider {
-    let node = tree.new_leaf(Style { height: Size::Px(1.0), ..Default::default() });
-    Divider { node, color: Color::rgb(0.85, 0.87, 0.90) }
 }
 
 // ── Checkbox ─────────────────────────────────────────────────────────────────
@@ -329,13 +265,6 @@ pub(crate) fn checkbox_style(label_len: usize, font_size: f32) -> Style {
     }
 }
 
-pub(crate) fn checkbox_widget(tree: &mut LayoutTree, label: impl Into<String>, checked: Signal<bool>) -> Checkbox {
-    let label_text = label.into();
-    let font_size = DEFAULT_TEXT_SIZE;
-    let node = tree.new_leaf(checkbox_style(label_text.len(), font_size));
-    Checkbox { node, label_text, checked, font_size }
-}
-
 // ── Slider ───────────────────────────────────────────────────────────────────
 
 pub struct Slider {
@@ -395,9 +324,4 @@ impl Widget for Slider {
 
 pub(crate) fn slider_style(width: f32) -> Style {
     Style { width: Size::Px(width), height: Size::Px(24.0), ..Default::default() }
-}
-
-pub(crate) fn slider_widget(tree: &mut LayoutTree, value: Signal<f32>, min: f32, max: f32) -> Slider {
-    let node = tree.new_leaf(slider_style(200.0));
-    Slider { node, value, min, max }
 }

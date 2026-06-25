@@ -28,6 +28,15 @@ fn font() -> &'static Font {
     })
 }
 
+pub fn text_measure_fn() -> impl Fn(&str, f32) -> (f32, f32) {
+    |text: &str, size: f32| {
+        let f = font();
+        let w: f32 = text.chars().map(|c| f.metrics(c, size).advance_width).sum();
+        let h = f.horizontal_line_metrics(size).map(|m| m.new_line_size).unwrap_or(size * 1.4);
+        (w, h)
+    }
+}
+
 /// Rasterize a full draw command list into a new pixmap of the given size
 /// (physical pixels), filled with `background` first.
 pub fn render_to_pixmap(commands: &[DrawCommand], width: u32, height: u32, background: FColor) -> Pixmap {

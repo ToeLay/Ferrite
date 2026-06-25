@@ -7,6 +7,8 @@
 
 use taffy::prelude::{auto, length, percent};
 use taffy::{AvailableSpace, Dimension, FlexDirection as TaffyFlexDirection, TaffyTree};
+use std::rc::Rc;
+use std::cell::RefCell;
 
 /// Which axis children are laid out along.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -175,9 +177,15 @@ pub struct Rect {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct NodeId(taffy::NodeId);
 
+pub enum NodeKind {
+    Text { content: Rc<RefCell<String>>, font_size: f32 },
+    Other,
+}
+
 /// Owns the flexbox tree and the cached result of the last `compute` call.
 pub struct LayoutTree {
-    inner: TaffyTree,
+    inner: TaffyTree<NodeKind>,
+    measure_fn: Option<Box<dyn Fn(&str, f32) -> (f32, f32)>>,
     hooks: Vec<Box<dyn Fn() -> Vec<(NodeId, Style)>>>,
 }
 
@@ -191,8 +199,13 @@ impl LayoutTree {
     pub fn new() -> Self {
         Self {
             inner: TaffyTree::new(),
+            measure_fn: None,
             hooks: Vec::new(),
         }
+    }
+
+    pub fn set_text_measure(&mut self, f: impl Fn(&str, f32) -> (f32, f32) + 'static) {
+        self.measure_fn = Some(Box::new(f));
     }
 
     pub fn add_pre_layout_hook(&mut self, hook: impl Fn() -> Vec<(NodeId, Style)> + 'static) {
@@ -200,7 +213,11 @@ impl LayoutTree {
     }
 
     pub fn new_leaf(&mut self, style: Style) -> NodeId {
-        NodeId(self.inner.new_leaf(to_taffy_style(&style)).expect("ferrite-layout: arena allocation failed"))
+        NodeId(self.inner.new_leaf_with_context(to_taffy_style(&style), NodeKind::Other).expect("ferrite-layout: arena allocation failed"))
+    }
+
+    pub fn new_text_leaf(&mut self, style: Style, content: Rc<RefCell<String>>, font_size: f32) -> NodeId {
+        NodeId(self.inner.new_leaf_with_context(to_taffy_style(&style), NodeKind::Text { content, font_size }).expect("ferrite-layout: arena allocation failed"))
     }
 
     pub fn new_with_children(&mut self, style: Style, children: &[NodeId]) -> NodeId {
@@ -225,6 +242,10 @@ impl LayoutTree {
             .expect("ferrite-layout: set_children on missing node");
     }
 
+    pub fn mark_dirty(&mut self, node: NodeId) {
+        let _ = self.inner.mark_dirty(node.0);
+    }
+
     /// Run the flexbox algorithm with the given viewport/container size, in
     /// logical pixels. Call this once per frame (or once per signal-driven
     /// layout invalidation, via the effect that wraps your render loop).
@@ -234,15 +255,25 @@ impl LayoutTree {
             self.set_style(node, style);
         }
 
-        self.inner
-            .compute_layout(
-                root.0,
-                taffy::Size {
-                    width: AvailableSpace::Definite(available_width),
-                    height: AvailableSpace::Definite(available_height),
-                },
-            )
-            .expect("ferrite-layout: compute_layout failed");
+        let size = taffy::Size {
+            width: AvailableSpace::Definite(available_width),
+            height: AvailableSpace::Definite(available_height),
+        };
+
+        if let Some(ref measure) = self.measure_fn {
+            let measure_fn = measure.as_ref();
+            self.inner.compute_layout_with_measure(root.0, size, |_, _, _, ctx, _| {
+                match ctx {
+                    Some(NodeKind::Text { content, font_size }) => {
+                        let (w, h) = measure_fn(&content.borrow(), *font_size);
+                        taffy::Size { width: w, height: h }
+                    }
+                    _ => taffy::Size { width: 0.0, height: 0.0 },
+                }
+            }).expect("ferrite-layout: compute_layout_with_measure failed");
+        } else {
+            self.inner.compute_layout(root.0, size).expect("ferrite-layout: compute_layout failed");
+        }
     }
 
     /// The resolved box for `node` after the last `compute` call. Coordinates

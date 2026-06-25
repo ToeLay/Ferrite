@@ -20,6 +20,7 @@ pub mod window  { pub use ferrite_window::{run as run_window, WindowConfig}; }
 pub fn run(title: &str, size: (u32, u32), root: impl View) {
     let root_view = root.view();
     let mut tree = LayoutTree::new();
+    tree.set_text_measure(ferrite_render_skia::text_measure_fn());
     let widget = root_view.build(&mut tree);
     let app = App::new(tree, widget);
     window::run_window(
@@ -36,6 +37,7 @@ pub fn run(title: &str, size: (u32, u32), root: impl View) {
 pub fn run_with(config: ferrite_window::WindowConfig, root: impl View) {
     let root_view = root.view();
     let mut tree = LayoutTree::new();
+    tree.set_text_measure(ferrite_render_skia::text_measure_fn());
     let widget = root_view.build(&mut tree);
     let app = App::new(tree, widget);
     window::run_window(config, app);
