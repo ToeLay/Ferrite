@@ -177,12 +177,26 @@ pub struct NodeId(taffy::NodeId);
 
 /// Owns the flexbox tree and the cached result of the last `compute` call.
 pub struct LayoutTree {
-    inner: TaffyTree<()>,
+    inner: TaffyTree,
+    hooks: Vec<Box<dyn Fn() -> Vec<(NodeId, Style)>>>,
+}
+
+impl Default for LayoutTree {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LayoutTree {
     pub fn new() -> Self {
-        LayoutTree { inner: TaffyTree::new() }
+        Self {
+            inner: TaffyTree::new(),
+            hooks: Vec::new(),
+        }
+    }
+
+    pub fn add_pre_layout_hook(&mut self, hook: impl Fn() -> Vec<(NodeId, Style)> + 'static) {
+        self.hooks.push(Box::new(hook));
     }
 
     pub fn new_leaf(&mut self, style: Style) -> NodeId {
@@ -215,6 +229,11 @@ impl LayoutTree {
     /// logical pixels. Call this once per frame (or once per signal-driven
     /// layout invalidation, via the effect that wraps your render loop).
     pub fn compute(&mut self, root: NodeId, available_width: f32, available_height: f32) {
+        let changes: Vec<(NodeId, Style)> = self.hooks.iter().flat_map(|h| h()).collect();
+        for (node, style) in changes {
+            self.set_style(node, style);
+        }
+
         self.inner
             .compute_layout(
                 root.0,
@@ -235,11 +254,6 @@ impl LayoutTree {
     }
 }
 
-impl Default for LayoutTree {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 #[cfg(test)]
 mod tests {

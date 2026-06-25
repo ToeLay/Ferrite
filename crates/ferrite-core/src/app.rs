@@ -14,6 +14,7 @@ impl App {
 
     pub fn layout_tree(&self) -> &LayoutTree { &self.tree }
     pub fn root_node_id(&self) -> NodeId { self.root.node_id() }
+    pub fn root(&self) -> &dyn Widget { self.root.as_ref() }
 
     pub fn absolute_rect(&self, target: NodeId) -> Option<Rect> {
         fn walk(w: &dyn Widget, tree: &LayoutTree, ox: f32, oy: f32, target: NodeId) -> Option<Rect> {

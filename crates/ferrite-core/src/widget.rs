@@ -27,6 +27,7 @@ pub trait Widget {
     /// Return `true` to consume the event.
     fn on_key(&mut self, _event: &KeyEvent) -> bool { false }
 
+
     fn paint(&self, tree: &LayoutTree, ox: f32, oy: f32, out: &mut Vec<DrawCommand>) {
         let r = tree.layout(self.node_id());
         let abs = Rect { x: ox + r.x, y: oy + r.y, width: r.width, height: r.height };

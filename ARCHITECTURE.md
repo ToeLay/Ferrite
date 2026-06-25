@@ -43,6 +43,21 @@ Rust* here is using `Copy` + an arena to get ergonomics other languages reach
 for `Rc<RefCell<>>` to get, without the cycle/lifetime headaches that come
 with it.
 
+## The Declarative Layer (`AnyView`)
+
+While the core `Widget` trait is retained-mode and mutable, forcing users to manually manage `Box<dyn Widget>` and parent-child layout relationships creates too much boilerplate. To solve this, Ferrite layers a **Declarative API** on top, driven by the `AnyView` type.
+
+1. **Type-erasure at the surface:** All UI constructor functions (`text()`, `button()`, `col()`, `row()`) return `AnyView`, a type-erased widget descriptor. This solves three problems:
+   - It eliminates Rust's tuple-size limits for children (e.g., `col([a, b, c])` works for any array/iterator size).
+   - It provides clean, understandable type errors for users.
+   - It allows conditional UI (`if show { a } else { b }`) without needing manual `.into_any()` casts on every branch.
+2. **One-shot Construction, Persistent Mutation:** An `AnyView` is consumed to build the underlying `Widget` tree exactly once. Reactivity isn't handled by diffing `AnyView`s; it's handled by wiring `ferrite_reactive::create_effect` closures directly to the persistent `Widget` node during that one-shot construction.
+3. **No General Reconciler:** Instead of a complex, heavy virtual-DOM reconciler that diffs arbitrary trees, Ferrite provides targeted dynamic primitives:
+   - `visible_when(closure)`: Keeps a widget in the tree but sets its layout size to zero using a layout tree hook when hidden (no teardown/rebuild, zero allocation).
+   - `switch(signal, branches)`: Evaluates multiple static branches upfront and toggles their visibility based on a key.
+
+This separation of concerns—a fast, mutable retained-mode tree at the bottom (`Widget`), and a clean, immutable descriptive API at the top (`AnyView`)—gives the ergonomics of a modern framework without the architectural overhead of a virtual DOM.
+
 ## Layer map
 
 ```
@@ -50,7 +65,7 @@ ferrite (facade + prelude)
    |
    +-- ferrite-window     winit (events/windowing) + softbuffer (present)
    +-- ferrite-render-skia  DrawCommand -> pixels, tiny-skia + fontdue
-   +-- ferrite-core       Widget trait, App, DrawCommand, dirty flag
+   +-- ferrite-core       Declarative API, Widget trait, App, DrawCommand, dirty flag
    |      +-- ferrite-layout   Style -> taffy -> resolved Rect
    |      +-- ferrite-reactive Signal/Memo/Effect (no UI knowledge at all)
 ```
@@ -80,10 +95,10 @@ overwhelmingly "stack of things," not inline text flow.
 
 **`ferrite-core`** is the one place layout, reactivity, and drawing meet, and
 it's built to minimize how much a widget author has to write. `Widget` is a
-trait with five default methods and effectively two required ones
+trait with default methods and effectively two required ones
 (`node_id`, plus `paint_self` or `children`/`children_mut` depending on
 whether it's a leaf or a container) — the tree-walking logic for painting and
-click hit-testing is written once, in the trait's default methods, not once
+hit-testing is written once, in the trait's default methods, not once
 per widget.
 
 **`ferrite-render-skia`** exists for three reasons, not as a placeholder:
@@ -102,13 +117,9 @@ per widget.
 windowing and input; `softbuffer` blits a CPU-rendered buffer straight to the
 window's native surface. This was a deliberate choice to keep the
 window/event code small enough to actually finish and verify (rather than
-sketch) before reaching for a shader pipeline — and it was the right call:
-running the very first build under a virtual display caught a real bug
-(`softbuffer` requires `resize()` before the first `present()`, and a
-`Resized` event isn't guaranteed to arrive before the first paint) that would
-have been a much slower loop to find and fix with a wgpu pipeline in the way.
+sketch) before reaching for a shader pipeline.
 
-## Honest limitations (v0.1)
+## Honest limitations (v0.2)
 
 These aren't hidden anywhere else in the codebase — flagged here and at the
 relevant call site:
@@ -126,7 +137,7 @@ relevant call site:
   `diamond_dependency_runs_effect_once` in `ferrite-reactive`'s tests, which
   documents and pins down the current (correct-but-redundant) behavior rather
   than hiding it. The fix is a standard topological-sort propagation pass;
-  it's the first thing to build past v0.1.
+  it's the first thing to build past v0.2.
 - **One window, one thread.** The reactive runtime is intentionally
   thread-local (`!Send`), matching how most native retained-mode UI
   toolkits work (GTK, single-threaded JS DOM). Multi-window support is a
@@ -134,13 +145,12 @@ relevant call site:
   share one with care taken around the `Scope` boundaries — not yet decided.
 - **Hit testing has no clipping.** A child can currently be "clicked" outside
   its parent's visible bounds if the parent doesn't itself clip. Doesn't bite
-  in practice yet because nothing in v0.1 scrolls or overflows.
+  in practice yet because nothing in v0.2 scrolls or overflows.
 
 ## What to build next, in order
 
 1. Topological batching in `ferrite-reactive` (fixes the diamond-dependency redundancy).
 2. A `taffy` measure-function hook fed by the active render backend's font
    metrics, replacing the character-count estimate.
-3. Keyboard input and focus (currently mouse-only).
-4. A `ferrite-render-wgpu` backend behind the same `DrawCommand` boundary —
+3. A `ferrite-render-wgpu` backend behind the same `DrawCommand` boundary —
    purely a performance/feature upgrade at that point, not an architecture change.

@@ -10,5 +10,4 @@ name = "counter"
 path = "src/main.rs"
 
 [dependencies]
-ferrite-core = { workspace = true }
-ferrite-render-skia = { workspace = true }
+ferrite = { path = "../../crates/ferrite" }
