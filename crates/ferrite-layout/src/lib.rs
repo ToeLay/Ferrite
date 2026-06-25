@@ -209,7 +209,7 @@ pub enum NodeKind {
 /// Owns the flexbox tree and the cached result of the last `compute` call.
 pub struct LayoutTree {
     inner: TaffyTree<NodeKind>,
-    measure_fn: Option<Box<dyn Fn(&str, f32) -> (f32, f32)>>,
+    measure_fn: Option<Box<dyn Fn(&str, f32, Option<f32>) -> (f32, f32)>>,
     hooks: Vec<Box<dyn Fn() -> Vec<(NodeId, Style)>>>,
 }
 
@@ -228,7 +228,7 @@ impl LayoutTree {
         }
     }
 
-    pub fn set_text_measure(&mut self, f: impl Fn(&str, f32) -> (f32, f32) + 'static) {
+    pub fn set_text_measure(&mut self, f: impl Fn(&str, f32, Option<f32>) -> (f32, f32) + 'static) {
         self.measure_fn = Some(Box::new(f));
     }
 
@@ -286,10 +286,11 @@ impl LayoutTree {
 
         if let Some(ref measure) = self.measure_fn {
             let measure_fn = measure.as_ref();
-            self.inner.compute_layout_with_measure(root.0, size, |_, _, _, ctx, _| {
+            self.inner.compute_layout_with_measure(root.0, size, |known, available, _, ctx, _| {
                 match ctx {
                     Some(NodeKind::Text { content, font_size }) => {
-                        let (w, h) = measure_fn(&content.borrow(), *font_size);
+                        let max_w = known.width.or(available.width.into_option());
+                        let (w, h) = measure_fn(&content.borrow(), *font_size, max_w);
                         taffy::Size { width: w, height: h }
                     }
                     _ => taffy::Size { width: 0.0, height: 0.0 },

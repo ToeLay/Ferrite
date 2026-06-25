@@ -1,0 +1,9 @@
+[package]
+name = "text_wrap"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+ferrite = { path = "../../crates/ferrite" }
+ferrite-core = { path = "../../crates/ferrite-core" }

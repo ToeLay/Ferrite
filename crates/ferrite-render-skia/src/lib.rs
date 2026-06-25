@@ -28,11 +28,82 @@ fn font() -> &'static Font {
     })
 }
 
-pub fn text_measure_fn() -> impl Fn(&str, f32) -> (f32, f32) {
-    |text: &str, size: f32| {
+#[derive(Clone, Debug)]
+pub struct TextLine {
+    pub text: String,
+    pub width: f32,
+}
+
+pub fn wrap_text(text: &str, size: f32, max_width: Option<f32>, f: &fontdue::Font) -> (f32, f32, Vec<TextLine>) {
+    let mut lines = Vec::new();
+    let mut max_line_width = 0.0f32;
+    let line_height = f.horizontal_line_metrics(size).map(|m| m.new_line_size).unwrap_or(size * 1.4);
+
+    if text.is_empty() {
+        return (0.0, line_height, vec![TextLine { text: String::new(), width: 0.0 }]);
+    }
+
+    for paragraph in text.split('\n') {
+        let mut current_line = String::new();
+        let mut current_width = 0.0;
+
+        if let Some(max_w) = max_width {
+            for word in paragraph.split_inclusive(char::is_whitespace) {
+                let trimmed_word = word.trim_end();
+                let whitespace = &word[trimmed_word.len()..];
+                
+                let trimmed_width: f32 = trimmed_word.chars().map(|c| f.metrics(c, size).advance_width).sum();
+                let whitespace_width: f32 = whitespace.chars().map(|c| f.metrics(c, size).advance_width).sum();
+                let word_width = trimmed_width + whitespace_width;
+
+                if current_width + trimmed_width <= max_w {
+                    current_line.push_str(word);
+                    current_width += word_width;
+                } else {
+                    if current_width > 0.0 {
+                        max_line_width = max_line_width.max(current_width);
+                        lines.push(TextLine { text: current_line, width: current_width });
+                        current_line = String::new();
+                        current_width = 0.0;
+                    }
+                    
+                    if trimmed_width <= max_w {
+                        current_line.push_str(word);
+                        current_width += word_width;
+                    } else {
+                        for ch in word.chars() {
+                            let ch_w = f.metrics(ch, size).advance_width;
+                            if current_width + ch_w > max_w && current_width > 0.0 {
+                                max_line_width = max_line_width.max(current_width);
+                                lines.push(TextLine { text: current_line, width: current_width });
+                                current_line = String::new();
+                                current_width = 0.0;
+                            }
+                            current_line.push(ch);
+                            current_width += ch_w;
+                        }
+                    }
+                }
+            }
+        } else {
+            current_line.push_str(paragraph);
+            current_width = current_line.chars().map(|c| f.metrics(c, size).advance_width).sum();
+        }
+        
+        let final_trimmed = current_line.trim_end();
+        let final_width: f32 = final_trimmed.chars().map(|c| f.metrics(c, size).advance_width).sum();
+        max_line_width = max_line_width.max(final_width);
+        lines.push(TextLine { text: current_line, width: final_width });
+    }
+
+    let total_height = lines.len() as f32 * line_height;
+    (max_line_width, total_height, lines)
+}
+
+pub fn text_measure_fn() -> impl Fn(&str, f32, Option<f32>) -> (f32, f32) {
+    |text: &str, size: f32, max_width: Option<f32>| {
         let f = font();
-        let w: f32 = text.chars().map(|c| f.metrics(c, size).advance_width).sum();
-        let h = f.horizontal_line_metrics(size).map(|m| m.new_line_size).unwrap_or(size * 1.4);
+        let (w, h, _) = wrap_text(text, size, max_width, f);
         (w, h)
     }
 }
@@ -86,15 +157,22 @@ pub fn render_to_pixmap(commands: &[DrawCommand], width: u32, height: u32, backg
                 let mask = if mask_active && *corner_radius > 0.0 { Some(&clip_mask) } else { None };
                 draw_rect(&mut pixmap, draw_r, *color, *corner_radius, mask)
             }
-            DrawCommand::Text { x, y, content, size, color } => {
-                if let Some(c) = active_clip {
-                    // Approximate text bounds
-                    let width = content.chars().count() as f32 * *size * 0.62;
-                    if *x > c.x + c.width || *y > c.y + c.height || *x + width < c.x || *y - *size < c.y {
-                        continue;
+            DrawCommand::Text { x, y, content, size, color, max_width } => {
+                let f = font();
+                let (_, _, lines) = wrap_text(content, *size, *max_width, f);
+                let line_height = f.horizontal_line_metrics(*size).map(|m| m.new_line_size).unwrap_or(*size * 1.4);
+                
+                let mut current_y = *y;
+                for line in lines {
+                    if let Some(c) = active_clip {
+                        if *x > c.x + c.width || current_y > c.y + c.height || *x + line.width < c.x || current_y - *size < c.y {
+                            current_y += line_height;
+                            continue;
+                        }
                     }
+                    draw_text(&mut pixmap, *x, current_y, &line.text, *size, *color, active_clip);
+                    current_y += line_height;
                 }
-                draw_text(&mut pixmap, *x, *y, content, *size, *color, active_clip)
             }
         }
     }

@@ -46,6 +46,7 @@ impl Widget for Text {
             x: rect.x, y: rect.y,
             content: self.content.borrow().clone(),
             size: self.size, color: self.color,
+            max_width: Some(rect.width),
         });
     }
 }
@@ -72,6 +73,7 @@ impl Widget for Button {
         out.push(DrawCommand::Text {
             x: rect.x + 18.0, y: rect.y + rect.height / 2.0 - 9.0,
             content: self.label.clone(), size: 18.0, color: self.foreground,
+            max_width: Some(rect.width - 36.0),
         });
     }
     fn on_click(&mut self) -> bool { (self.on_click)(); true }
@@ -161,10 +163,10 @@ impl Widget for TextInput {
         let text_y = rect.y + (rect.height - self.font_size) / 2.0;
         if val.is_empty() {
             out.push(DrawCommand::Text { x: rect.x + pad, y: text_y, content: self.placeholder.clone(),
-                size: self.font_size, color: self.theme.muted });
+                size: self.font_size, color: self.theme.muted, max_width: Some(rect.width - 2.0 * pad) });
         } else {
             out.push(DrawCommand::Text { x: rect.x + pad, y: text_y, content: val,
-                size: self.font_size, color: self.theme.on_surface });
+                size: self.font_size, color: self.theme.on_surface, max_width: Some(rect.width - 2.0 * pad) });
         }
         if self.focused {
             let cx = rect.x + pad + self.cursor_x();
@@ -253,6 +255,7 @@ impl Widget for Checkbox {
             out.push(DrawCommand::Text {
                 x: tx, y: ty, content: self.label_text.clone(),
                 size: self.font_size, color: self.theme.on_surface,
+                max_width: Some(rect.width - box_size - self.theme.spacing),
             });
         }
     }

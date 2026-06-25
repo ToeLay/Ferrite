@@ -6,7 +6,8 @@ members = [
     "examples/window_counter",
     "examples/text_input",
     "examples/slider",
-    "examples/scroll"
+    "examples/scroll",
+    "examples/text_wrap"
 ]
 
 [workspace.package]
