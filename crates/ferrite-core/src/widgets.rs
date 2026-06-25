@@ -223,6 +223,7 @@ pub struct Checkbox {
     pub(crate) node: NodeId,
     pub(crate) label_text: String,
     pub(crate) checked: Signal<bool>,
+    pub(crate) anim: ferrite_reactive::Signal<f32>,
     pub(crate) font_size: f32,
     pub(crate) theme: Theme,
 }
@@ -241,23 +242,44 @@ impl Widget for Checkbox {
         let by = rect.y + (rect.height - box_size) / 2.0;
 
         let outer = Rect { x: rect.x, y: by, width: box_size, height: box_size };
-        let border_color = if self.checked.get() {
-            self.theme.primary
-        } else {
-            self.theme.muted
-        };
+        let anim_val = self.anim.get();
+        let border_color = if self.checked.get() { self.theme.primary } else { self.theme.muted };
         out.push(DrawCommand::Rect { rect: outer, color: border_color, corner_radius: self.theme.radius_sm });
 
         let inner = Rect { x: outer.x + 2.0, y: outer.y + 2.0, width: outer.width - 4.0, height: outer.height - 4.0 };
-        if self.checked.get() {
-            out.push(DrawCommand::Rect { rect: inner, color: self.theme.primary, corner_radius: (self.theme.radius_sm - 2.0).max(0.0) });
+        
+        // Background fill fades in
+        if anim_val > 0.01 {
+            out.push(DrawCommand::Rect { 
+                rect: inner, 
+                color: Color { a: self.theme.primary.a * anim_val, ..self.theme.primary }, 
+                corner_radius: (self.theme.radius_sm - 2.0).max(0.0) 
+            });
+            
+            // Checkmark scales and fades in
+            let scale = 0.6 * anim_val;
+            let mark_w = inner.width * scale;
+            let mark_h = inner.height * scale;
             let mark = Rect {
-                x: inner.x + inner.width * 0.2, y: inner.y + inner.height * 0.2,
-                width: inner.width * 0.6, height: inner.height * 0.6,
+                x: inner.x + (inner.width - mark_w) / 2.0, 
+                y: inner.y + (inner.height - mark_h) / 2.0,
+                width: mark_w, 
+                height: mark_h,
             };
-            out.push(DrawCommand::Rect { rect: mark, color: self.theme.on_primary, corner_radius: 1.0 });
-        } else {
-            out.push(DrawCommand::Rect { rect: inner, color: self.theme.surface, corner_radius: (self.theme.radius_sm - 2.0).max(0.0) });
+            out.push(DrawCommand::Rect { 
+                rect: mark, 
+                color: Color { a: self.theme.on_primary.a * anim_val, ..self.theme.on_primary }, 
+                corner_radius: 1.0 
+            });
+        }
+        
+        if anim_val < 0.99 {
+            // Draw surface color behind it if not fully animated
+            out.push(DrawCommand::Rect { 
+                rect: inner, 
+                color: Color { a: self.theme.surface.a * (1.0 - anim_val), ..self.theme.surface }, 
+                corner_radius: (self.theme.radius_sm - 2.0).max(0.0) 
+            });
         }
 
         if !self.label_text.is_empty() {

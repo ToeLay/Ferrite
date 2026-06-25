@@ -6,11 +6,13 @@ pub struct App {
     root: Box<dyn Widget>,
     focused: Option<NodeId>,
     active_drag: Option<NodeId>,
+    last_frame: Option<std::time::Instant>,
 }
 
 impl App {
     pub fn new(tree: LayoutTree, root: Box<dyn Widget>) -> Self {
-        App { tree, root, focused: None, active_drag: None }
+        ferrite_reactive::animation::set_wake_up(crate::dirty::request_repaint);
+        App { tree, root, focused: None, active_drag: None, last_frame: None }
     }
 
     pub fn layout_tree(&self) -> &LayoutTree { &self.tree }
@@ -31,6 +33,17 @@ impl App {
     }
 
     pub fn render(&mut self, width: f32, height: f32) -> Vec<DrawCommand> {
+        let now = std::time::Instant::now();
+        let dt = if let Some(last) = self.last_frame {
+            now.duration_since(last).as_secs_f32()
+        } else {
+            1.0 / 60.0
+        };
+        self.last_frame = Some(now);
+
+        // Tick animations (this might request repaint if animations are still running)
+        ferrite_reactive::animation::tick_animations(dt);
+
         self.root.update(&mut self.tree);
 
         let dirty_nodes = crate::dirty::take_dirty_nodes();

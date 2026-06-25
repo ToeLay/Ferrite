@@ -5,6 +5,7 @@ pub use ferrite_core::{
     KeyCode, KeyEvent, Modifiers, LayoutTree, NodeId, Rect, Size, Style, Widget,
 };
 pub use ferrite_reactive::{create_effect, create_memo, create_signal, Memo, Scope, Signal, SignalVecExt};
+pub use ferrite_reactive::{use_spring, use_tween, SpringConfig};
 
 // New declarative API
 pub use ferrite_core::{AnyView, View};

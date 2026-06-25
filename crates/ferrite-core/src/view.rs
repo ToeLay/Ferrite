@@ -441,7 +441,10 @@ impl ViewDescriptor for CheckboxDescriptor {
         overrides.apply_to(&mut style);
         let node = tree.new_leaf(style);
         let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
-        Box::new(Checkbox { node, label_text: label, checked, font_size, theme })
+        
+        let anim = ferrite_reactive::use_spring(move || if checked.get() { 1.0 } else { 0.0 }, ferrite_reactive::SpringConfig::bouncy());
+        
+        Box::new(Checkbox { node, label_text: label, checked, anim, font_size, theme })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
     fn set_font_size(&mut self, s: f32) { self.font_size = s; }

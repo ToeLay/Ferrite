@@ -8,9 +8,14 @@
 //! branches that stop being taken stop being depended on.
 
 mod runtime;
+pub mod spring;
+pub mod tween;
 mod scope;
+pub mod animation;
 
 pub use scope::Scope;
+pub use spring::{use_spring, SpringConfig};
+pub use tween::use_tween;
 
 use runtime::NodeId;
 use std::marker::PhantomData;
