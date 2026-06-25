@@ -30,6 +30,8 @@ struct Runner {
     surface: Option<Surface<OwnedDisplayHandle, Rc<Window>>>,
     cursor_pos: (f64, f64),
     modifiers: winit::keyboard::ModifiersState,
+    drag_active: bool,
+    drag_start: (f32, f32),
 }
 
 impl ApplicationHandler for Runner {
@@ -67,10 +69,19 @@ impl ApplicationHandler for Runner {
 
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_pos = (position.x, position.y);
+                if self.drag_active {
+                    self.app.drag(self.cursor_pos.0 as f32, self.cursor_pos.1 as f32);
+                }
             }
 
             WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
+                self.drag_active = true;
+                self.drag_start = (self.cursor_pos.0 as f32, self.cursor_pos.1 as f32);
                 self.app.click(self.cursor_pos.0 as f32, self.cursor_pos.1 as f32);
+            }
+
+            WindowEvent::MouseInput { state: ElementState::Released, button: MouseButton::Left, .. } => {
+                self.drag_active = false;
             }
 
             WindowEvent::KeyboardInput { event: key_event, .. } => {
@@ -149,6 +160,8 @@ pub fn run(config: WindowConfig, app: App) {
         window: None, surface: None,
         cursor_pos: (0.0, 0.0),
         modifiers: winit::keyboard::ModifiersState::empty(),
+        drag_active: false,
+        drag_start: (0.0, 0.0),
     };
     event_loop.run_app(&mut runner).expect("event loop");
 }

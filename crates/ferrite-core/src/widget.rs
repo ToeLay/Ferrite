@@ -45,6 +45,16 @@ pub trait Widget {
         self.on_click()
     }
 
+    fn drag_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
+        let r = tree.layout(self.node_id());
+        let ax = ox + r.x; let ay = oy + r.y;
+        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return false; }
+        for child in self.children_mut().iter_mut().rev() {
+            if child.drag_at(tree, ax, ay, px, py) { return true; }
+        }
+        false
+    }
+
     fn find_focusable_at(&self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<NodeId> {
         let r = tree.layout(self.node_id());
         let ax = ox + r.x; let ay = oy + r.y;

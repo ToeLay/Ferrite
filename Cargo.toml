@@ -10,6 +10,7 @@ members = [
     "examples/counter",
     "examples/window_counter",
     "examples/text_input",
+    "examples/slider",
 ]
 
 [workspace.package]

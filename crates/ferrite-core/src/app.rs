@@ -50,6 +50,10 @@ impl App {
         self.root.click_at(&self.tree, 0.0, 0.0, x, y)
     }
 
+    pub fn drag(&mut self, x: f32, y: f32) -> bool {
+        self.root.drag_at(&self.tree, 0.0, 0.0, x, y)
+    }
+
     pub fn key_event(&mut self, event: KeyEvent) -> bool {
         if let Some(focused) = self.focused {
             self.root.dispatch_key(focused, &event)

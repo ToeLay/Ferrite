@@ -288,6 +288,21 @@ impl Widget for Slider {
         true
     }
 
+    fn drag_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, _py: f32) -> bool {
+        let r = tree.layout(self.node_id());
+        let ax = ox + r.x;
+        let _ay = oy + r.y;
+        // Unlike click, drag doesn't bounds check the Y axis so you don't lose
+        // tracking if your mouse wanders up/down slightly while dragging horizontally
+        if px < ax || px > ax + r.width {
+            // we still clamp the value to the bounds
+        }
+        let ratio = ((px - ax) / r.width).clamp(0.0, 1.0);
+        self.value.set(self.min + (self.max - self.min) * ratio);
+        request_repaint();
+        true
+    }
+
     fn paint_self(&self, rect: Rect, out: &mut Vec<DrawCommand>) {
         let val = self.value.get();
         let ratio = ((val - self.min) / (self.max - self.min)).clamp(0.0, 1.0);
