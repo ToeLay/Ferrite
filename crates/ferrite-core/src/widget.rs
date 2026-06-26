@@ -48,13 +48,37 @@ pub trait Widget {
 
     fn click_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<NodeId> {
         let r = tree.layout(self.node_id());
-        let ax = ox + r.x; let ay = oy + r.y;
-        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return None; }
+        let abs = Rect { x: ox + r.x, y: oy + r.y, width: r.width, height: r.height };
+        if px < abs.x || py < abs.y || px > abs.x + abs.width || py > abs.y + abs.height { return None; }
         for child in self.children_mut().iter_mut().rev() {
-            if let Some(id) = child.click_at(tree, ax, ay, px, py) { return Some(id); }
+            if let Some(clicked) = child.click_at(tree, abs.x, abs.y, px, py) { return Some(clicked); }
         }
         if self.on_click() { Some(self.node_id()) } else { None }
     }
+
+    fn double_click_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<NodeId> {
+        let r = tree.layout(self.node_id());
+        let abs = Rect { x: ox + r.x, y: oy + r.y, width: r.width, height: r.height };
+        if px < abs.x || py < abs.y || px > abs.x + abs.width || py > abs.y + abs.height { return None; }
+        for child in self.children_mut().iter_mut().rev() {
+            if let Some(clicked) = child.double_click_at(tree, abs.x, abs.y, px, py) { return Some(clicked); }
+        }
+        if self.on_double_click() { Some(self.node_id()) } else { None }
+    }
+
+    fn on_double_click(&mut self) -> bool { false }
+
+    fn triple_click_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<NodeId> {
+        let r = tree.layout(self.node_id());
+        let abs = Rect { x: ox + r.x, y: oy + r.y, width: r.width, height: r.height };
+        if px < abs.x || py < abs.y || px > abs.x + abs.width || py > abs.y + abs.height { return None; }
+        for child in self.children_mut().iter_mut().rev() {
+            if let Some(clicked) = child.triple_click_at(tree, abs.x, abs.y, px, py) { return Some(clicked); }
+        }
+        if self.on_triple_click() { Some(self.node_id()) } else { None }
+    }
+
+    fn on_triple_click(&mut self) -> bool { false }
 
     fn drag_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
         let r = tree.layout(self.node_id());

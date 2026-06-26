@@ -34,6 +34,9 @@ struct Runner {
     modifiers: winit::keyboard::ModifiersState,
     drag_active: bool,
     drag_start: (f32, f32),
+    last_click_time: Option<std::time::Instant>,
+    last_click_pos: Option<(f64, f64)>,
+    click_count: u32,
 }
 
 impl ApplicationHandler for Runner {
@@ -77,9 +80,35 @@ impl ApplicationHandler for Runner {
             }
 
             WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
+                let now = std::time::Instant::now();
+                let mut current_click_count = 1;
+                if let (Some(last_time), Some(last_pos)) = (self.last_click_time, self.last_click_pos) {
+                    if now.duration_since(last_time).as_millis() < 300 {
+                        let dx = self.cursor_pos.0 - last_pos.0;
+                        let dy = self.cursor_pos.1 - last_pos.1;
+                        if dx * dx + dy * dy < 25.0 {
+                            current_click_count = self.click_count + 1;
+                        }
+                    }
+                }
+                
+                self.click_count = current_click_count;
                 self.drag_active = true;
                 self.drag_start = (self.cursor_pos.0 as f32, self.cursor_pos.1 as f32);
-                self.app.click(self.cursor_pos.0 as f32, self.cursor_pos.1 as f32);
+                
+                if current_click_count == 2 {
+                    self.app.double_click(self.cursor_pos.0 as f32, self.cursor_pos.1 as f32);
+                    self.last_click_time = Some(now);
+                    self.last_click_pos = Some(self.cursor_pos);
+                } else if current_click_count == 3 {
+                    self.app.triple_click(self.cursor_pos.0 as f32, self.cursor_pos.1 as f32);
+                    self.last_click_time = None; // Reset so next click is 1
+                    self.click_count = 0;
+                } else {
+                    self.app.click(self.cursor_pos.0 as f32, self.cursor_pos.1 as f32);
+                    self.last_click_time = Some(now);
+                    self.last_click_pos = Some(self.cursor_pos);
+                }
             }
 
             WindowEvent::MouseInput { state: ElementState::Released, button: MouseButton::Left, .. } => {
@@ -177,11 +206,15 @@ pub fn run(config: WindowConfig, app: App) {
     let context = Context::new(event_loop.owned_display_handle()).expect("create softbuffer context");
     let mut runner = Runner {
         config, app, context,
-        window: None, surface: None,
+        window: None,
+        surface: None,
         cursor_pos: (0.0, 0.0),
         modifiers: winit::keyboard::ModifiersState::empty(),
         drag_active: false,
         drag_start: (0.0, 0.0),
+        last_click_time: None,
+        last_click_pos: None,
+        click_count: 0,
     };
     event_loop.run_app(&mut runner).expect("event loop");
 }

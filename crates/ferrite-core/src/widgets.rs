@@ -422,6 +422,24 @@ impl Widget for TextInput {
         }
     }
 
+    fn on_double_click(&mut self) -> bool {
+        let val = self.value.get();
+        let (start, end) = word_bounds(&val, self.cursor);
+        self.selection_start = Some(start);
+        self.cursor = end;
+        request_repaint();
+        true
+    }
+
+    fn on_triple_click(&mut self) -> bool {
+        let val = self.value.get();
+        self.selection_start = Some(0);
+        self.cursor = val.chars().count();
+        request_repaint();
+        true
+    }
+
+
     fn paint_self(&self, rect: Rect, out: &mut Vec<DrawCommand>) {
         let border_color = if self.focused { self.theme.primary } else { self.theme.muted };
         let pad = 10.0_f32;
@@ -1217,6 +1235,36 @@ impl Widget for TextArea {
         }
     }
 
+    fn on_double_click(&mut self) -> bool {
+        let val = self.value.get();
+        let (start, end) = word_bounds(&val, self.cursor);
+        self.selection_start = Some(start);
+        self.cursor = end;
+        request_repaint();
+        true
+    }
+
+    fn on_triple_click(&mut self) -> bool {
+        let val = self.value.get();
+        let (cur_line, _) = self.char_to_line_col(self.cursor);
+        
+        // Find line bounds
+        let lines: Vec<&str> = val.split('\n').collect();
+        if cur_line < lines.len() {
+            let mut start_idx = 0;
+            for i in 0..cur_line {
+                start_idx += lines[i].chars().count() + 1; // +1 for '\n'
+            }
+            let end_idx = start_idx + lines[cur_line].chars().count();
+            
+            self.selection_start = Some(start_idx);
+            self.cursor = end_idx;
+            request_repaint();
+            return true;
+        }
+        false
+    }
+
     fn paint_self(&self, rect: Rect, out: &mut Vec<DrawCommand>) {
         let border_color = if self.focused { self.theme.primary } else { self.theme.muted };
         let pad = 10.0_f32;
@@ -1322,4 +1370,31 @@ fn word_right(s: &str, mut cursor: usize) -> usize {
     while cursor < len && chars[cursor].is_whitespace() { cursor += 1; }
     while cursor < len && !chars[cursor].is_whitespace() { cursor += 1; }
     cursor
+}
+
+fn word_bounds(s: &str, cursor: usize) -> (usize, usize) {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.is_empty() { return (0, 0); }
+    let len = chars.len();
+    
+    let mut pos = if cursor >= len { len - 1 } else { cursor };
+    
+    if pos > 0 && chars[pos].is_whitespace() && !chars[pos - 1].is_whitespace() {
+        pos -= 1;
+    }
+    
+    let is_ws = chars[pos].is_whitespace();
+    
+    let mut start = pos;
+    let mut end = pos;
+    
+    if is_ws {
+        while start > 0 && chars[start - 1].is_whitespace() { start -= 1; }
+        while end < len && chars[end].is_whitespace() { end += 1; }
+    } else {
+        while start > 0 && !chars[start - 1].is_whitespace() { start -= 1; }
+        while end < len && !chars[end].is_whitespace() { end += 1; }
+    }
+    
+    (start, end)
 }

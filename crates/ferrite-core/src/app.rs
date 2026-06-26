@@ -68,6 +68,20 @@ impl App {
         clicked.is_some()
     }
 
+    pub fn double_click(&mut self, x: f32, y: f32) -> bool {
+        let clicked = self.root.double_click_at(&self.tree, 0.0, 0.0, x, y);
+        // Cancel active drag on double click so small mouse jitters
+        // don't immediately override the word selection with a normal drag.
+        self.active_drag = None;
+        clicked.is_some()
+    }
+
+    pub fn triple_click(&mut self, x: f32, y: f32) -> bool {
+        let clicked = self.root.triple_click_at(&self.tree, 0.0, 0.0, x, y);
+        self.active_drag = None;
+        clicked.is_some()
+    }
+
     pub fn drag(&mut self, x: f32, y: f32) -> bool {
         if let Some(target) = self.active_drag {
             self.root.dispatch_drag(target, &self.tree, 0.0, 0.0, x, y)
