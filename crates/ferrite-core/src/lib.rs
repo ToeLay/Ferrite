@@ -23,7 +23,7 @@ pub use ferrite_layout::{AlignItems, Direction, Edges, JustifyContent, NodeId, R
 pub use ferrite_layout::LayoutTree;
 pub use ferrite_reactive as reactive;
 
-pub use view::{text, label, button, input, col, row, spacer, divider, checkbox, slider, switch, scroll, list};
+pub use view::{text, label, button, input, textarea, col, row, spacer, divider, checkbox, slider, switch, scroll, list};
 pub use context::{provide, inject, reset_context};
 
 #[cfg(test)]

@@ -321,6 +321,51 @@ pub fn input(value: Signal<String>, placeholder: &str) -> AnyView {
     }
 }
 
+// ── TextAreaDescriptor ───────────────────────────────────────────────────────
+
+struct TextAreaDescriptor {
+    value: Signal<String>,
+    placeholder: String,
+    font_size: f32,
+    overrides: StyleOverrides,
+}
+
+impl ViewDescriptor for TextAreaDescriptor {
+    fn build(self: Box<Self>, tree: &mut LayoutTree) -> Box<dyn Widget> {
+        let TextAreaDescriptor { value, placeholder, font_size, overrides } = *self;
+        // Default textarea style: flex growing block
+        let mut style = Style {
+            width: Size::Percent(100.0),
+            height: Size::Px(120.0),
+            flex_grow: 1.0,
+            ..Default::default()
+        };
+        overrides.apply_to(&mut style);
+        let node = tree.new_leaf(style);
+        let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
+        Box::new(crate::widgets::TextArea {
+            node, value, placeholder, focused: false, cursor: 0, selection_start: None,
+            scroll_x: 0.0, scroll_y: 0.0, cursor_px: 0.0, cursor_py: 0.0,
+            selection_start_px: None, selection_start_py: None,
+            line_chars: Vec::new(), line_height: font_size * 1.4,
+            font_size, theme,
+        })
+    }
+    fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
+    fn set_font_size(&mut self, s: f32) { self.font_size = s; }
+}
+
+pub fn textarea(value: Signal<String>) -> AnyView {
+    AnyView {
+        inner: Box::new(TextAreaDescriptor {
+            value,
+            placeholder: String::new(),
+            font_size: widgets::DEFAULT_TEXT_SIZE,
+            overrides: StyleOverrides::default(),
+        }),
+    }
+}
+
 // ── ContainerDescriptor ──────────────────────────────────────────────────────
 
 struct ContainerDescriptor {

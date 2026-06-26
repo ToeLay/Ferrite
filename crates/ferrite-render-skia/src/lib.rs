@@ -43,7 +43,9 @@ pub fn wrap_text(text: &str, size: f32, max_width: Option<f32>, f: &fontdue::Fon
         return (0.0, line_height, vec![TextLine { text: String::new(), width: 0.0 }]);
     }
 
-    for paragraph in text.split('\n') {
+    let mut paragraphs = text.split('\n').peekable();
+    while let Some(paragraph) = paragraphs.next() {
+        let has_newline = paragraphs.peek().is_some();
         let mut current_line = String::new();
         let mut current_width = 0.0;
 
@@ -52,8 +54,9 @@ pub fn wrap_text(text: &str, size: f32, max_width: Option<f32>, f: &fontdue::Fon
                 let trimmed_word = word.trim_end();
                 let whitespace = &word[trimmed_word.len()..];
                 
-                let trimmed_width: f32 = trimmed_word.chars().map(|c| f.metrics(c, size).advance_width).sum();
-                let whitespace_width: f32 = whitespace.chars().map(|c| f.metrics(c, size).advance_width).sum();
+                let advance_width = |c: char| if c == '\n' || c == '\r' { 0.0 } else { f.metrics(c, size).advance_width };
+                let trimmed_width: f32 = trimmed_word.chars().map(advance_width).sum();
+                let whitespace_width: f32 = whitespace.chars().map(advance_width).sum();
                 let word_width = trimmed_width + whitespace_width;
 
                 if current_width + trimmed_width <= max_w {
@@ -72,7 +75,7 @@ pub fn wrap_text(text: &str, size: f32, max_width: Option<f32>, f: &fontdue::Fon
                         current_width += word_width;
                     } else {
                         for ch in word.chars() {
-                            let ch_w = f.metrics(ch, size).advance_width;
+                            let ch_w = if ch == '\n' || ch == '\r' { 0.0 } else { f.metrics(ch, size).advance_width };
                             if current_width + ch_w > max_w && current_width > 0.0 {
                                 max_line_width = max_line_width.max(current_width);
                                 lines.push(TextLine { text: current_line, width: current_width });
@@ -90,8 +93,12 @@ pub fn wrap_text(text: &str, size: f32, max_width: Option<f32>, f: &fontdue::Fon
             current_width = current_line.chars().map(|c| f.metrics(c, size).advance_width).sum();
         }
         
-        let final_width: f32 = current_line.chars().map(|c| f.metrics(c, size).advance_width).sum();
+        let advance_width = |c: char| if c == '\n' || c == '\r' { 0.0 } else { f.metrics(c, size).advance_width };
+        let final_width: f32 = current_line.chars().map(advance_width).sum();
         max_line_width = max_line_width.max(final_width);
+        if has_newline {
+            current_line.push('\n');
+        }
         lines.push(TextLine { text: current_line, width: final_width });
     }
 
@@ -104,6 +111,14 @@ pub fn text_measure_fn() -> impl Fn(&str, f32, Option<f32>) -> (f32, f32) {
         let f = font();
         let (w, h, _) = wrap_text(text, size, max_width, f);
         (w, h)
+    }
+}
+
+pub fn text_wrap_lines_fn() -> impl Fn(&str, f32, f32) -> Vec<usize> {
+    |text: &str, size: f32, max_width: f32| {
+        let f = font();
+        let (_, _, lines) = wrap_text(text, size, Some(max_width), f);
+        lines.into_iter().map(|l| l.text.chars().count()).collect()
     }
 }
 
@@ -252,6 +267,7 @@ fn draw_text(pixmap: &mut Pixmap, x: f32, y: f32, content: &str, size: f32, colo
     let baseline_y = y + size * 0.8;
 
     for ch in content.chars() {
+        if ch == '\n' || ch == '\r' { continue; }
         let metrics = f.metrics(ch, size);
         let glyph_x = pen_x + metrics.xmin as f32;
         let glyph_y = baseline_y - metrics.ymin as f32 - metrics.height as f32;

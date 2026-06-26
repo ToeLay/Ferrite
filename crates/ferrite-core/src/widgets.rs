@@ -189,8 +189,8 @@ impl Widget for TextInput {
         } else {
             for (i, (byte_idx, ch)) in val.char_indices().enumerate() {
                 let s = &val[..byte_idx];
-                let (w, _) = tree.measure_text(s, self.font_size);
-                let (cw, _) = tree.measure_text(&ch.to_string(), self.font_size);
+                let (w, _) = tree.measure_text(s, self.font_size, None);
+                let (cw, _) = tree.measure_text(&ch.to_string(), self.font_size, None);
                 if rel_x < w + cw / 2.0 {
                     found_idx = i;
                     break;
@@ -221,8 +221,8 @@ impl Widget for TextInput {
         } else {
             for (i, (byte_idx, ch)) in val.char_indices().enumerate() {
                 let s = &val[..byte_idx];
-                let (w, _) = tree.measure_text(s, self.font_size);
-                let (cw, _) = tree.measure_text(&ch.to_string(), self.font_size);
+                let (w, _) = tree.measure_text(s, self.font_size, None);
+                let (cw, _) = tree.measure_text(&ch.to_string(), self.font_size, None);
                 if rel_x < w + cw / 2.0 {
                     found_idx = i;
                     break;
@@ -252,20 +252,20 @@ impl Widget for TextInput {
         // Compute pixel offsets precisely using fontdue
         let byte_pos = val.char_indices().nth(self.cursor).map(|(i, _)| i).unwrap_or(val.len());
         let s = &val[..byte_pos];
-        let (w, _) = tree.measure_text(s, self.font_size);
+        let (w, _) = tree.measure_text(s, self.font_size, None);
         self.cursor_px = w;
         
         if let Some(s_start) = self.selection_start {
             let s_byte = val.char_indices().nth(s_start).map(|(i, _)| i).unwrap_or(val.len());
             let s_str = &val[..s_byte];
-            let (sw, _) = tree.measure_text(s_str, self.font_size);
+            let (sw, _) = tree.measure_text(s_str, self.font_size, None);
             self.selection_start_px = Some(sw);
         } else {
             self.selection_start_px = None;
         }
         
         let r = tree.layout(self.node_id());
-        let (total_w, _) = tree.measure_text(&val, self.font_size);
+        let (total_w, _) = tree.measure_text(&val, self.font_size, None);
         self.ensure_cursor_visible(r.width, total_w);
     }
 
@@ -711,5 +711,503 @@ impl Widget for Scroll {
             return Some(found);
         }
         if self.is_focusable() { Some(self.node_id()) } else { None }
+    }
+}
+
+// ── TextArea ─────────────────────────────────────────────────────────────────
+
+pub struct TextArea {
+    pub(crate) node: NodeId,
+    pub(crate) value: Signal<String>,
+    pub(crate) placeholder: String,
+    pub(crate) focused: bool,
+    pub(crate) cursor: usize,
+    pub(crate) selection_start: Option<usize>,
+    pub(crate) scroll_x: f32,
+    pub(crate) scroll_y: f32,
+    pub(crate) cursor_px: f32,
+    pub(crate) cursor_py: f32,
+    pub(crate) selection_start_px: Option<f32>,
+    pub(crate) selection_start_py: Option<f32>,
+    pub(crate) line_chars: Vec<usize>,
+    pub(crate) line_height: f32,
+    pub(crate) font_size: f32,
+    pub(crate) theme: Theme,
+}
+
+impl TextArea {
+    fn char_to_line_col(&self, index: usize) -> (usize, usize) {
+        let val = self.value.get();
+        let mut cur_line = 0;
+        let mut cur_col = index;
+        let mut chars_skipped = 0;
+        for &lc in &self.line_chars {
+            let ends_with_newline = lc > 0 && val.chars().nth(chars_skipped + lc - 1) == Some('\n');
+            if cur_col < lc || (cur_col == lc && !ends_with_newline) {
+                break;
+            }
+            cur_col -= lc;
+            chars_skipped += lc;
+            cur_line += 1;
+        }
+        (cur_line, cur_col)
+    }
+
+    pub fn placeholder(mut self, s: impl Into<String>) -> Self { self.placeholder = s.into(); self }
+    pub fn font_size(mut self, size: f32) -> Self { self.font_size = size; self }
+    
+    fn selection_range(&self) -> Option<(usize, usize)> {
+        self.selection_start.map(|s| if s <= self.cursor { (s, self.cursor) } else { (self.cursor, s) })
+    }
+    
+    fn delete_selection(&mut self) -> bool {
+        if let Some((start, end)) = self.selection_range() {
+            if start != end {
+                let val = self.value.get();
+                let byte_start = val.char_indices().nth(start).map(|(i, _)| i).unwrap_or(val.len());
+                let byte_end = val.char_indices().nth(end).map(|(i, _)| i).unwrap_or(val.len());
+                let mut s = val.clone();
+                s.replace_range(byte_start..byte_end, "");
+                self.value.set(s);
+                self.cursor = start;
+                self.selection_start = None;
+                return true;
+            }
+        }
+        self.selection_start = None;
+        false
+    }
+    
+    fn handle_shift(&mut self, shift: bool) {
+        if shift {
+            if self.selection_start.is_none() {
+                self.selection_start = Some(self.cursor);
+            }
+        } else {
+            self.selection_start = None;
+        }
+    }
+    
+    fn ensure_cursor_visible(&mut self, width: f32, height: f32, total_w: f32, total_h: f32) {
+        let pad = 10.0;
+        let inner_w = width - 2.0 * pad;
+        let inner_h = height - 2.0 * pad;
+        let cx = self.cursor_px;
+        let cy = self.cursor_py;
+        
+        if cx < self.scroll_x {
+            self.scroll_x = cx.max(0.0);
+        } else if cx > self.scroll_x + inner_w {
+            self.scroll_x = cx - inner_w + 2.0;
+        }
+        
+        if cy < self.scroll_y {
+            self.scroll_y = cy.max(0.0);
+        } else if cy + self.font_size * 1.4 > self.scroll_y + inner_h {
+            self.scroll_y = cy + self.font_size * 1.4 - inner_h + 2.0;
+        }
+        
+        let max_scroll_x = (total_w - inner_w).max(0.0);
+        if self.scroll_x > max_scroll_x {
+            self.scroll_x = max_scroll_x;
+        }
+        let max_scroll_y = (total_h - inner_h).max(0.0);
+        if self.scroll_y > max_scroll_y {
+            self.scroll_y = max_scroll_y;
+        }
+    }
+}
+
+impl Widget for TextArea {
+    fn node_id(&self) -> NodeId { self.node }
+    fn is_focusable(&self) -> bool { true }
+    
+    fn click_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<NodeId> {
+        let r = tree.layout(self.node_id());
+        let ax = ox + r.x;
+        let ay = oy + r.y;
+        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return None; }
+        
+        let pad = 10.0;
+        let rel_y = py - (ay + pad) + self.scroll_y;
+        let rel_x = px - (ax + pad) + self.scroll_x;
+        
+        let line_height = self.line_height;
+        let mut target_line = (rel_y / line_height).floor() as usize;
+        if target_line >= self.line_chars.len() {
+            target_line = self.line_chars.len().saturating_sub(1);
+        }
+        
+        let val = self.value.get();
+        let mut chars_skipped = 0;
+        for i in 0..target_line {
+            chars_skipped += self.line_chars[i];
+        }
+        
+        let line_len = self.line_chars.get(target_line).copied().unwrap_or(0);
+        let byte_start = val.char_indices().nth(chars_skipped).map(|(i,_)| i).unwrap_or(val.len());
+        let byte_end = val.char_indices().nth(chars_skipped + line_len).map(|(i,_)| i).unwrap_or(val.len());
+        
+        let line_str = &val[byte_start..byte_end];
+        let mut found_col = line_len;
+        
+        if rel_x <= 0.0 {
+            found_col = 0;
+        } else {
+            for (i, (byte_idx, ch)) in line_str.char_indices().enumerate() {
+                let s = &line_str[..byte_idx];
+                let (w, _) = tree.measure_text(s, self.font_size, None);
+                let (cw, _) = tree.measure_text(&ch.to_string(), self.font_size, None);
+                if rel_x < w + cw / 2.0 {
+                    found_col = i;
+                    break;
+                }
+            }
+        }
+        
+        // Exclude the trailing \n from being clickable directly at the end
+        if found_col > 0 && found_col == line_len && line_str.ends_with('\n') {
+            found_col -= 1;
+        }
+        
+        self.cursor = chars_skipped + found_col;
+        self.selection_start = None;
+        request_repaint();
+        Some(self.node_id())
+    }
+
+    fn drag_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
+        let r = tree.layout(self.node_id());
+        let ax = ox + r.x;
+        let ay = oy + r.y;
+        
+        if self.selection_start.is_none() {
+            self.selection_start = Some(self.cursor);
+        }
+        
+        let pad = 10.0;
+        let rel_y = py - (ay + pad) + self.scroll_y;
+        let rel_x = px - (ax + pad) + self.scroll_x;
+        
+        let line_height = self.line_height;
+        let mut target_line = (rel_y / line_height).floor() as usize;
+        if target_line >= self.line_chars.len() {
+            target_line = self.line_chars.len().saturating_sub(1);
+        }
+        
+        let val = self.value.get();
+        let mut chars_skipped = 0;
+        for i in 0..target_line {
+            chars_skipped += self.line_chars[i];
+        }
+        
+        let line_len = self.line_chars.get(target_line).copied().unwrap_or(0);
+        let byte_start = val.char_indices().nth(chars_skipped).map(|(i,_)| i).unwrap_or(val.len());
+        let byte_end = val.char_indices().nth(chars_skipped + line_len).map(|(i,_)| i).unwrap_or(val.len());
+        
+        let line_str = &val[byte_start..byte_end];
+        let mut found_col = line_len;
+        
+        if rel_x <= 0.0 {
+            found_col = 0;
+        } else {
+            for (i, (byte_idx, ch)) in line_str.char_indices().enumerate() {
+                let s = &line_str[..byte_idx];
+                let (w, _) = tree.measure_text(s, self.font_size, None);
+                let (cw, _) = tree.measure_text(&ch.to_string(), self.font_size, None);
+                if rel_x < w + cw / 2.0 {
+                    found_col = i;
+                    break;
+                }
+            }
+        }
+        
+        if found_col > 0 && found_col == line_len && line_str.ends_with('\n') {
+            found_col -= 1;
+        }
+        
+        let idx = chars_skipped + found_col;
+        if self.cursor != idx {
+            self.cursor = idx;
+            request_repaint();
+        }
+        true
+    }
+    
+    fn update(&mut self, tree: &mut LayoutTree) {
+        let val = self.value.get();
+        let char_count = val.chars().count();
+        if self.cursor > char_count {
+            self.cursor = char_count;
+        }
+        if let Some(s) = self.selection_start {
+            if s > char_count {
+                self.selection_start = Some(char_count);
+            }
+        }
+        
+        let r = tree.layout(self.node_id());
+        let pad = 10.0;
+        let inner_w = r.width - 2.0 * pad;
+        
+        let (_, lh) = tree.measure_text("A", self.font_size, None);
+        self.line_height = lh;
+        
+        let (total_w, total_h) = tree.measure_text(&val, self.font_size, Some(inner_w));
+        
+        let line_chars = tree.wrap_lines(&val, self.font_size, inner_w);
+        self.line_chars = line_chars.clone();
+        
+        let (cur_line, cur_col) = self.char_to_line_col(self.cursor);
+        
+        let mut byte_pos_start_of_line = 0;
+        let mut chars_skipped = 0;
+        for (i, &lc) in line_chars.iter().enumerate() {
+            if i == cur_line { break; }
+            chars_skipped += lc;
+        }
+        byte_pos_start_of_line = val.char_indices().nth(chars_skipped).map(|(i,_)| i).unwrap_or(val.len());
+        
+        let cursor_byte = val.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(val.len());
+        let line_str_before_cursor = &val[byte_pos_start_of_line..cursor_byte];
+        
+        let (w, _) = tree.measure_text(line_str_before_cursor, self.font_size, None);
+        self.cursor_px = w;
+        let line_height = self.line_height;
+        self.cursor_py = cur_line as f32 * line_height;
+        
+        // Similar for selection
+        if let Some(s) = self.selection_start {
+            let (s_line, s_col) = self.char_to_line_col(s);
+            let mut s_skipped = 0;
+            for (i, &lc) in line_chars.iter().enumerate() {
+                if i == s_line { break; }
+                s_skipped += lc;
+            }
+            let s_byte_start = val.char_indices().nth(s_skipped).map(|(i,_)| i).unwrap_or(val.len());
+            let s_byte = val.char_indices().nth(s).map(|(i,_)| i).unwrap_or(val.len());
+            let s_str_before = &val[s_byte_start..s_byte];
+            let (sw, _) = tree.measure_text(s_str_before, self.font_size, None);
+            
+            self.selection_start_px = Some(sw);
+            self.selection_start_py = Some(s_line as f32 * line_height);
+        } else {
+            self.selection_start_px = None;
+            self.selection_start_py = None;
+        }
+        
+        self.ensure_cursor_visible(r.width, r.height, total_w, total_h);
+    }
+
+    fn on_focus_change(&mut self, focused: bool) {
+        self.focused = focused;
+        request_repaint();
+    }
+
+    fn on_key(&mut self, event: &KeyEvent) -> bool {
+        let val = self.value.get();
+        let char_count = val.chars().count();
+        let is_cmd = event.modifiers.meta || event.modifiers.ctrl;
+        
+        match &event.key {
+            KeyCode::Char(ch) => {
+                if is_cmd && (*ch == 'a' || *ch == 'A') {
+                    self.selection_start = Some(0);
+                    self.cursor = char_count;
+                    request_repaint();
+                    return true;
+                }
+                if is_cmd && (*ch == 'c' || *ch == 'C') {
+                    if let Some((start, end)) = self.selection_range() {
+                        if start != end {
+                            let text_val = self.value.get();
+                            let chars: String = text_val.chars().skip(start).take(end - start).collect();
+                            crate::clipboard::set_text(chars);
+                        }
+                    }
+                    return true;
+                }
+                if is_cmd && (*ch == 'v' || *ch == 'V') {
+                    if let Some(text) = crate::clipboard::get_text() {
+                        self.delete_selection();
+                        let mut s = self.value.get();
+                        let byte_pos = s.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(s.len());
+                        s.insert_str(byte_pos, &text);
+                        self.cursor += text.chars().count();
+                        self.value.set(s);
+                        request_repaint();
+                    }
+                    return true;
+                }
+                if !is_cmd {
+                    self.delete_selection();
+                    let mut s = self.value.get();
+                    let byte_pos = s.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(s.len());
+                    s.insert(byte_pos, *ch);
+                    self.cursor += 1;
+                    self.value.set(s);
+                    request_repaint();
+                }
+                true
+            }
+            KeyCode::Return => {
+                self.delete_selection();
+                let mut s = self.value.get();
+                let byte_pos = s.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(s.len());
+                s.insert(byte_pos, '\n');
+                self.cursor += 1;
+                self.value.set(s);
+                request_repaint();
+                true
+            }
+            KeyCode::Backspace => {
+                if !self.delete_selection() && self.cursor > 0 {
+                    let mut s = self.value.get();
+                    let byte_pos = s.char_indices().nth(self.cursor - 1).map(|(i,_)| i).unwrap_or(0);
+                    s.remove(byte_pos);
+                    self.cursor -= 1;
+                    self.value.set(s);
+                    request_repaint();
+                }
+                true
+            }
+            KeyCode::Delete => {
+                if !self.delete_selection() && self.cursor < char_count {
+                    let mut s = self.value.get();
+                    let byte_pos = s.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(s.len());
+                    s.remove(byte_pos);
+                    self.value.set(s);
+                    request_repaint();
+                }
+                true
+            }
+            KeyCode::Left  => { 
+                self.handle_shift(event.modifiers.shift);
+                if self.cursor > 0 { self.cursor -= 1; request_repaint(); } 
+                true 
+            }
+            KeyCode::Right => { 
+                self.handle_shift(event.modifiers.shift);
+                if self.cursor < char_count { self.cursor += 1; request_repaint(); } 
+                true 
+            }
+            KeyCode::Up | KeyCode::Down => {
+                self.handle_shift(event.modifiers.shift);
+                let (cur_line, cur_col) = self.char_to_line_col(self.cursor);
+                let is_up = match event.key { KeyCode::Up => true, _ => false };
+                
+                let target_line = if is_up { cur_line.saturating_sub(1) } else { cur_line + 1 };
+                
+                if target_line < self.line_chars.len() {
+                    let target_len = self.line_chars[target_line];
+                    let new_col = cur_col.min(target_len.saturating_sub(1));
+                    let mut skipped = 0;
+                    for i in 0..target_line { skipped += self.line_chars[i]; }
+                    self.cursor = skipped + new_col;
+                    request_repaint();
+                }
+                true
+            }
+            KeyCode::Home  => { 
+                self.handle_shift(event.modifiers.shift);
+                self.cursor = 0; request_repaint(); 
+                true 
+            }
+            KeyCode::End   => { 
+                self.handle_shift(event.modifiers.shift);
+                self.cursor = char_count; request_repaint(); 
+                true 
+            }
+            KeyCode::Tab | KeyCode::Escape => false,
+            _ => false,
+        }
+    }
+
+    fn paint_self(&self, rect: Rect, out: &mut Vec<DrawCommand>) {
+        let border_color = if self.focused { self.theme.primary } else { self.theme.muted };
+        let pad = 10.0_f32;
+        out.push(DrawCommand::Rect { rect, color: border_color, corner_radius: self.theme.radius_md - 1.0 });
+        let inner = Rect { x: rect.x + 1.5, y: rect.y + 1.5, width: rect.width - 3.0, height: rect.height - 3.0 };
+        out.push(DrawCommand::Rect { rect: inner, color: self.theme.surface, corner_radius: self.theme.radius_md - 2.0 });
+        out.push(DrawCommand::PushClip { rect: inner });
+        
+        let val = self.value.get();
+        let text_y = rect.y + pad - self.scroll_y;
+        let base_x = rect.x + pad - self.scroll_x;
+        
+        if val.is_empty() {
+            out.push(DrawCommand::Text { x: base_x, y: text_y, content: self.placeholder.clone(),
+                size: self.font_size, color: self.theme.muted, max_width: Some(rect.width - 2.0 * pad) });
+        } else {
+            out.push(DrawCommand::Text { x: base_x, y: text_y, content: val,
+                size: self.font_size, color: self.theme.on_surface, max_width: Some(rect.width - 2.0 * pad) });
+        }
+        
+        
+        if self.focused {
+            let line_height = self.line_height;
+            // Draw multi-line selection box
+            if let Some((start, end)) = self.selection_range() {
+                if start != end {
+                    // Quick and dirty selection drawing: just drawing block spanning lines
+                    let mut s_px = self.selection_start_px.unwrap_or(0.0);
+                    let mut s_py = self.selection_start_py.unwrap_or(0.0);
+                    let mut c_px = self.cursor_px;
+                    let mut c_py = self.cursor_py;
+                    
+                    if start == self.cursor {
+                        std::mem::swap(&mut s_px, &mut c_px);
+                        std::mem::swap(&mut s_py, &mut c_py);
+                    }
+                    
+                    let start_py = s_py;
+                    let start_px = s_px;
+                    let end_py = c_py;
+                    let end_px = c_px;
+                    
+                    let inner_w = rect.width - 2.0 * pad;
+                    
+                    if (start_py - end_py).abs() < 1.0 { // Same line
+                        let sx = base_x + start_px.min(end_px);
+                        let ex = base_x + start_px.max(end_px);
+                        out.push(DrawCommand::Rect {
+                            rect: Rect { x: sx, y: text_y + start_py, width: ex - sx, height: self.font_size },
+                            color: Color { a: 0.3, ..self.theme.primary }, corner_radius: 2.0,
+                        });
+                    } else { // Multiple lines
+                        // 1. first line
+                        out.push(DrawCommand::Rect {
+                            rect: Rect { x: base_x + start_px, y: text_y + start_py, width: inner_w - start_px, height: self.font_size },
+                            color: Color { a: 0.3, ..self.theme.primary }, corner_radius: 2.0,
+                        });
+                        // 2. middle lines
+                        let mid_lines = ((end_py - start_py) / line_height).round() as i32 - 1;
+                        if mid_lines > 0 {
+                            for m in 0..mid_lines {
+                                out.push(DrawCommand::Rect {
+                                    rect: Rect { x: base_x, y: text_y + start_py + line_height * (m + 1) as f32, width: inner_w, height: self.font_size },
+                                    color: Color { a: 0.3, ..self.theme.primary }, corner_radius: 2.0,
+                                });
+                            }
+                        }
+                        // 3. last line
+                        out.push(DrawCommand::Rect {
+                            rect: Rect { x: base_x, y: text_y + end_py, width: end_px, height: self.font_size },
+                            color: Color { a: 0.3, ..self.theme.primary }, corner_radius: 2.0,
+                        });
+                    }
+                }
+            }
+            
+            // Draw cursor
+            let cx = base_x + self.cursor_px;
+            let cy = text_y + self.cursor_py;
+            out.push(DrawCommand::Rect {
+                rect: Rect { x: cx, y: cy, width: 2.0, height: self.font_size },
+                color: self.theme.primary, corner_radius: 0.0,
+            });
+        }
+        
+        out.push(DrawCommand::PopClip);
     }
 }

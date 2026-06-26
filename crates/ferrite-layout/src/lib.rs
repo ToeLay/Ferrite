@@ -209,8 +209,9 @@ pub enum NodeKind {
 /// Owns the flexbox tree and the cached result of the last `compute` call.
 pub struct LayoutTree {
     inner: TaffyTree<NodeKind>,
-    measure_fn: Option<Box<dyn Fn(&str, f32, Option<f32>) -> (f32, f32)>>,
-    hooks: Vec<Box<dyn Fn() -> Vec<(NodeId, Style)>>>,
+    measure_fn: Option<Box<dyn Fn(&str, f32, Option<f32>) -> (f32, f32) + 'static>>,
+    wrap_lines_fn: Option<Box<dyn Fn(&str, f32, f32) -> Vec<usize> + 'static>>,
+    hooks: Vec<Box<dyn Fn() -> Vec<(NodeId, Style)> + 'static>>,
 }
 
 impl Default for LayoutTree {
@@ -224,6 +225,7 @@ impl LayoutTree {
         Self {
             inner: TaffyTree::new(),
             measure_fn: None,
+            wrap_lines_fn: None,
             hooks: Vec::new(),
         }
     }
@@ -232,11 +234,23 @@ impl LayoutTree {
         self.measure_fn = Some(Box::new(f));
     }
     
-    pub fn measure_text(&self, text: &str, font_size: f32) -> (f32, f32) {
+    pub fn measure_text(&self, text: &str, font_size: f32, max_width: Option<f32>) -> (f32, f32) {
         if let Some(f) = &self.measure_fn {
-            f(text, font_size, None)
+            f(text, font_size, max_width)
         } else {
             (text.chars().count() as f32 * font_size * 0.62, font_size * 1.4)
+        }
+    }
+    
+    pub fn set_wrap_lines(&mut self, f: impl Fn(&str, f32, f32) -> Vec<usize> + 'static) {
+        self.wrap_lines_fn = Some(Box::new(f));
+    }
+    
+    pub fn wrap_lines(&self, text: &str, font_size: f32, max_width: f32) -> Vec<usize> {
+        if let Some(f) = &self.wrap_lines_fn {
+            f(text, font_size, max_width)
+        } else {
+            vec![text.chars().count()]
         }
     }
 

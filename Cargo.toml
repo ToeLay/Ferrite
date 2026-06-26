@@ -9,7 +9,7 @@ members = [
     "examples/scroll",
     "examples/text_wrap",
     "examples/dynamic_list"
-, "examples/animation_showcase"]
+, "examples/animation_showcase", "examples/textarea"]
 
 [workspace.package]
 version = "0.1.0"
