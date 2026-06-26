@@ -64,6 +64,8 @@ pub struct Button {
     pub(crate) on_click: Box<dyn FnMut()>,
     pub(crate) background: Color,
     pub(crate) foreground: Color,
+    pub(crate) theme: Theme,
+    pub(crate) focused: bool,
 }
 impl Button {
     pub fn background(mut self, c: Color) -> Self { self.background = c; self }
@@ -71,7 +73,34 @@ impl Button {
 }
 impl Widget for Button {
     fn node_id(&self) -> NodeId { self.node }
+    fn is_focusable(&self) -> bool { true }
+    fn on_focus_change(&mut self, focused: bool) {
+        self.focused = focused;
+        request_repaint();
+    }
+    fn on_key(&mut self, event: &crate::KeyEvent) -> bool {
+        if self.focused {
+            if event.key == crate::KeyCode::Return || event.key == crate::KeyCode::Char(' ') {
+                self.on_click();
+                return true;
+            }
+        }
+        false
+    }
     fn paint_self(&self, rect: Rect, out: &mut Vec<DrawCommand>) {
+        if self.focused {
+            // Draw a 2px focus ring with a 2px gap around the button
+            // 1. Outer ring (primary color)
+            out.push(DrawCommand::Rect {
+                rect: Rect { x: rect.x - 4.0, y: rect.y - 4.0, width: rect.width + 8.0, height: rect.height + 8.0 },
+                color: self.theme.primary, corner_radius: 14.0,
+            });
+            // 2. Inner gap (surface color to mask out the gap)
+            out.push(DrawCommand::Rect {
+                rect: Rect { x: rect.x - 2.0, y: rect.y - 2.0, width: rect.width + 4.0, height: rect.height + 4.0 },
+                color: self.theme.surface, corner_radius: 12.0,
+            });
+        }
         out.push(DrawCommand::Rect { rect, color: self.background, corner_radius: 10.0 });
         out.push(DrawCommand::Text {
             x: rect.x + 18.0, y: rect.y + rect.height / 2.0 - 9.0,

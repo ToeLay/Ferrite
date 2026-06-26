@@ -262,7 +262,8 @@ impl ViewDescriptor for ButtonDescriptor {
         };
         overrides.apply_to(&mut style);
         let node = tree.new_leaf(style);
-        Box::new(Button { node, label, on_click, background, foreground })
+        let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
+        Box::new(Button { node, label, on_click, background, foreground, theme, focused: false })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
     fn set_background(&mut self, c: Color) { self.background = c; }
