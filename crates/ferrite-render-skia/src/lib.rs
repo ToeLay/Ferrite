@@ -171,22 +171,49 @@ pub fn render_to_pixmap(commands: &[DrawCommand], width: u32, height: u32, backg
                 let mask = if mask_active && *corner_radius > 0.0 { Some(&clip_mask) } else { None };
                 draw_rect(&mut pixmap, draw_r, *color, *corner_radius, mask)
             }
-            DrawCommand::Text { x, y, content, size, color, max_width } => {
+            DrawCommand::Text { x, y, content, size, color, max_width, single_line } => {
                 let f = font();
-                let (_, _, lines) = wrap_text(content, *size, *max_width, f);
-                let line_height = f.horizontal_line_metrics(*size).map(|m| m.new_line_size).unwrap_or(*size * 1.4);
-                
-                let mut current_y = *y;
-                for line in lines {
-                    if let Some(c) = active_clip {
-                        if *x > c.x + c.width || current_y > c.y + c.height || *x + line.width < c.x || current_y + line_height < c.y {
-                            current_y += line_height;
-                            continue;
+                if *single_line {
+                    let mut text_to_draw = content.clone();
+                    if let Some(max_w) = max_width {
+                        let mut current_width: f32 = text_to_draw.chars().map(|c| f.metrics(c, *size).advance_width).sum();
+                        if current_width > *max_w {
+                            // Truncate and add ...
+                            let dot_w = f.metrics('.', *size).advance_width * 3.0;
+                            let mut new_text = String::new();
+                            let mut w = 0.0;
+                            for c in text_to_draw.chars() {
+                                let cw = f.metrics(c, *size).advance_width;
+                                if w + cw + dot_w > *max_w {
+                                    break;
+                                }
+                                w += cw;
+                                new_text.push(c);
+                            }
+                            new_text.push_str("...");
+                            text_to_draw = new_text;
                         }
                     }
-                    draw_text(&mut pixmap, *x, current_y, &line.text, *size, *color, active_clip);
-                    current_y += line_height;
+                    draw_text(&mut pixmap, *x, *y, &text_to_draw, *size, *color, active_clip);
+                } else {
+                    let (_, _, lines) = wrap_text(content, *size, *max_width, f);
+                    let line_height = f.horizontal_line_metrics(*size).map(|m| m.new_line_size).unwrap_or(*size * 1.4);
+                    
+                    let mut current_y = *y;
+                    for line in lines {
+                        if let Some(c) = active_clip {
+                            if *x > c.x + c.width || current_y > c.y + c.height || *x + line.width < c.x || current_y + line_height < c.y {
+                                current_y += line_height;
+                                continue;
+                            }
+                        }
+                        draw_text(&mut pixmap, *x, current_y, &line.text, *size, *color, active_clip);
+                        current_y += line_height;
+                    }
                 }
+            }
+            DrawCommand::TooltipRegion { .. } => {
+                // Ignore. Tooltip metadata for App, not drawn directly.
             }
         }
     }
@@ -237,11 +264,11 @@ fn draw_rect(pixmap: &mut Pixmap, rect: FRect, color: FColor, radius: f32, clip:
     }
 }
 
-/// Builds a rounded-rect path by hand: tiny-skia's high-level API doesn't
-/// ship a round-rect constructor, so each corner is a quadratic Bezier from
-/// one straight edge to the next. (Splitting a circular arc into a single
-/// quad isn't mathematically exact, but at the corner radii a UI actually
-/// uses -- a handful of pixels -- the error is sub-pixel and invisible.)
+/// Manual "source over" blend of one glyph coverage sample into the pixmap's
+/// premultiplied buffer. This is the one place this crate touches raw
+/// pixels directly instead of going through tiny-skia's path-filling API --
+/// glyph coverage bitmaps from fontdue are exactly that, per-pixel coverage,
+/// not geometry, so there's no path to hand tiny-skia in the first place.
 fn rounded_rect_path(rect: FRect, r: f32) -> Option<tiny_skia::Path> {
     let (x, y, w, h) = (rect.x, rect.y, rect.width, rect.height);
     let mut pb = PathBuilder::new();

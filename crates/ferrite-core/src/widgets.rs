@@ -57,6 +57,7 @@ impl Widget for Text {
             content: self.content.borrow().clone(),
             size: self.size, color: self.color,
             max_width: Some(rect.width),
+            single_line: false,
         });
     }
 }
@@ -113,6 +114,7 @@ impl Widget for Button {
             x: rect.x + 18.0, y: rect.y + rect.height / 2.0 - 9.0,
             content: self.label.clone(), size: 18.0, color: self.foreground,
             max_width: Some(rect.width - 36.0),
+            single_line: true,
         });
     }
     fn on_click(&mut self) -> bool { (self.on_click)(); true }
@@ -523,10 +525,10 @@ impl Widget for TextInput {
         
         if val.is_empty() {
             out.push(DrawCommand::Text { x: base_x, y: text_y, content: self.placeholder.clone(),
-                size: self.font_size, color: self.theme.muted, max_width: None });
+                size: self.font_size, color: self.theme.muted, max_width: None, single_line: true });
         } else {
             out.push(DrawCommand::Text { x: base_x, y: text_y, content: val,
-                size: self.font_size, color: self.theme.on_surface, max_width: None });
+                size: self.font_size, color: self.theme.on_surface, max_width: None, single_line: true });
         }
         if self.focused {
             // Draw selection box
@@ -660,6 +662,7 @@ impl Widget for Checkbox {
                 x: tx, y: ty, content: self.label_text.clone(),
                 size: self.font_size, color: self.theme.on_surface,
                 max_width: Some(rect.width - box_size - self.theme.spacing),
+                single_line: false,
             });
         }
     }
@@ -1411,10 +1414,10 @@ impl Widget for TextArea {
         
         if val.is_empty() {
             out.push(DrawCommand::Text { x: base_x, y: text_y, content: self.placeholder.clone(),
-                size: self.font_size, color: self.theme.muted, max_width: Some(rect.width - 2.0 * pad) });
+                size: self.font_size, color: self.theme.muted, max_width: Some(rect.width - 2.0 * pad), single_line: false });
         } else {
             out.push(DrawCommand::Text { x: base_x, y: text_y, content: val,
-                size: self.font_size, color: self.theme.on_surface, max_width: Some(rect.width - 2.0 * pad) });
+                size: self.font_size, color: self.theme.on_surface, max_width: Some(rect.width - 2.0 * pad), single_line: false });
         }
         
         
@@ -1529,4 +1532,46 @@ fn word_bounds(s: &str, cursor: usize) -> (usize, usize) {
     }
     
     (start, end)
+}
+
+// ── Portal (Overlay) ─────────────────────────────────────────────────────────
+
+pub struct PortalWidget {
+    pub(crate) node: NodeId,
+    pub(crate) show: Signal<bool>,
+    pub(crate) content: Box<dyn Fn() -> crate::view::AnyView>,
+    pub(crate) active_overlay: Option<crate::overlay::OverlayId>,
+    pub(crate) last_show: bool,
+}
+
+impl Widget for PortalWidget {
+    fn node_id(&self) -> NodeId { self.node }
+    fn children(&self) -> &[Box<dyn Widget>] { &[] }
+    fn children_mut(&mut self) -> &mut [Box<dyn Widget>] { &mut [] }
+
+    fn update(&mut self, _tree: &mut LayoutTree) {
+        self.show.track();
+        let current_show = self.show.get();
+        if current_show != self.last_show {
+            self.last_show = current_show;
+            if current_show {
+                if self.active_overlay.is_none() {
+                    let view = (self.content)();
+                    self.active_overlay = Some(crate::overlay::show_overlay(view));
+                }
+            } else {
+                if let Some(id) = self.active_overlay.take() {
+                    crate::overlay::remove_overlay(id);
+                }
+            }
+        }
+    }
+}
+
+impl Drop for PortalWidget {
+    fn drop(&mut self) {
+        if let Some(id) = self.active_overlay.take() {
+            crate::overlay::remove_overlay(id);
+        }
+    }
 }

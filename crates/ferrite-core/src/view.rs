@@ -19,6 +19,10 @@ struct StyleOverrides {
     flex_shrink: Option<f32>,
     align: Option<AlignItems>,
     justify: Option<JustifyContent>,
+    pub overflow_x: Option<ferrite_layout::Overflow>,
+    pub overflow_y: Option<ferrite_layout::Overflow>,
+    pub position_type: Option<ferrite_layout::PositionType>,
+    pub inset: Option<ferrite_layout::Inset>,
 }
 
 impl StyleOverrides {
@@ -32,6 +36,10 @@ impl StyleOverrides {
         if let Some(s) = self.flex_shrink { style.flex_shrink = s; }
         if let Some(a) = self.align { style.align_items = a; }
         if let Some(j) = self.justify { style.justify_content = j; }
+        if let Some(ox) = self.overflow_x { style.overflow_x = ox; }
+        if let Some(oy) = self.overflow_y { style.overflow_y = oy; }
+        if let Some(pt) = self.position_type { style.position_type = pt; }
+        if let Some(i) = self.inset { style.inset = i; }
     }
 }
 
@@ -88,6 +96,25 @@ impl AnyView {
     }
     pub fn width(mut self, w: f32) -> Self {
         self.inner.style_overrides_mut().width = Some(Size::Px(w));
+        self
+    }
+    pub fn height_percent(mut self, h: f32) -> Self {
+        self.inner.style_overrides_mut().height = Some(Size::Percent(h));
+        self
+    }
+    
+    pub fn position_type(mut self, pt: ferrite_layout::PositionType) -> Self {
+        self.inner.style_overrides_mut().position_type = Some(pt);
+        self
+    }
+    
+    pub fn inset(mut self, inset: ferrite_layout::Inset) -> Self {
+        self.inner.style_overrides_mut().inset = Some(inset);
+        self
+    }
+
+    pub fn width_percent(mut self, w: f32) -> Self {
+        self.inner.style_overrides_mut().width = Some(Size::Percent(w));
         self
     }
     pub fn height(mut self, h: f32) -> Self {
@@ -148,6 +175,26 @@ impl AnyView {
             }),
         }
     }
+    
+    pub fn tooltip(self, text: &str) -> Self {
+        AnyView {
+            inner: Box::new(TooltipDescriptor {
+                inner: self,
+                text: text.to_string(),
+                overrides: StyleOverrides::default(),
+            }),
+        }
+    }
+
+    pub fn anchor(self, token: Anchor) -> Self {
+        AnyView {
+            inner: Box::new(AnchorDescriptor {
+                inner: self,
+                token,
+                overrides: StyleOverrides::default(),
+            }),
+        }
+    }
 }
 
 // ── View trait ───────────────────────────────────────────────────────────────
@@ -158,6 +205,100 @@ pub trait View {
 
 impl View for AnyView {
     fn view(self) -> AnyView { self }
+}
+
+// ── TooltipDescriptor ──────────────────────────────────────────────────────────
+
+struct TooltipDescriptor {
+    inner: AnyView,
+    text: String,
+    overrides: StyleOverrides,
+}
+
+struct TooltipWidget {
+    node: ferrite_layout::NodeId,
+    child: Box<dyn crate::Widget>,
+    text: String,
+}
+
+impl crate::Widget for TooltipWidget {
+    fn node_id(&self) -> ferrite_layout::NodeId { self.node }
+    fn children(&self) -> &[Box<dyn crate::Widget>] { std::slice::from_ref(&self.child) }
+    fn children_mut(&mut self) -> &mut [Box<dyn crate::Widget>] { std::slice::from_mut(&mut self.child) }
+    fn tooltip(&self) -> Option<&str> { Some(&self.text) }
+    fn update(&mut self, tree: &mut ferrite_layout::LayoutTree) {
+        self.child.update(tree);
+    }
+    fn paint(&self, tree: &ferrite_layout::LayoutTree, ox: f32, oy: f32, out: &mut Vec<crate::DrawCommand>) {
+        let r = tree.layout(self.node);
+        let abs = ferrite_layout::Rect { x: ox + r.x, y: oy + r.y, width: r.width, height: r.height };
+        out.push(crate::DrawCommand::TooltipRegion {
+            rect: abs,
+            text: self.text.clone(),
+        });
+        self.child.paint(tree, ox + r.x, oy + r.y, out);
+    }
+}
+
+impl ViewDescriptor for TooltipDescriptor {
+    fn build(self: Box<Self>, tree: &mut ferrite_layout::LayoutTree) -> Box<dyn crate::Widget> {
+        let TooltipDescriptor { inner, text, overrides } = *self;
+        let child = inner.build(tree);
+        let mut style = ferrite_layout::Style::default();
+        overrides.apply_to(&mut style);
+        let node = tree.new_with_children(style, &[child.node_id()]);
+        Box::new(TooltipWidget { node, child, text })
+    }
+    fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
+}
+
+// ── Anchor ───────────────────────────────────────────────────────────────────
+
+#[derive(Clone, Default)]
+pub struct Anchor(pub std::rc::Rc<std::cell::Cell<Option<ferrite_layout::Rect>>>);
+
+impl Anchor {
+    pub fn new() -> Self { Self::default() }
+    pub fn get(&self) -> Option<ferrite_layout::Rect> { self.0.get() }
+}
+
+struct AnchorDescriptor {
+    inner: AnyView,
+    token: Anchor,
+    overrides: StyleOverrides,
+}
+
+struct AnchorWidget {
+    node: ferrite_layout::NodeId,
+    child: Box<dyn crate::Widget>,
+    token: Anchor,
+}
+
+impl crate::Widget for AnchorWidget {
+    fn node_id(&self) -> ferrite_layout::NodeId { self.node }
+    fn children(&self) -> &[Box<dyn crate::Widget>] { std::slice::from_ref(&self.child) }
+    fn children_mut(&mut self) -> &mut [Box<dyn crate::Widget>] { std::slice::from_mut(&mut self.child) }
+    fn update(&mut self, tree: &mut ferrite_layout::LayoutTree) {
+        self.child.update(tree);
+    }
+    fn paint(&self, tree: &ferrite_layout::LayoutTree, ox: f32, oy: f32, out: &mut Vec<crate::DrawCommand>) {
+        let r = tree.layout(self.node);
+        let abs = ferrite_layout::Rect { x: ox + r.x, y: oy + r.y, width: r.width, height: r.height };
+        self.token.0.set(Some(abs));
+        self.child.paint(tree, ox + r.x, oy + r.y, out);
+    }
+}
+
+impl ViewDescriptor for AnchorDescriptor {
+    fn build(self: Box<Self>, tree: &mut ferrite_layout::LayoutTree) -> Box<dyn crate::Widget> {
+        let AnchorDescriptor { inner, token, overrides } = *self;
+        let child = inner.build(tree);
+        let mut style = ferrite_layout::Style::default();
+        overrides.apply_to(&mut style);
+        let node = tree.new_with_children(style, &[child.node_id()]);
+        Box::new(AnchorWidget { node, child, token })
+    }
+    fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
 }
 
 // ── TextDescriptor ───────────────────────────────────────────────────────────
@@ -679,6 +820,39 @@ pub fn list<T: Clone + 'static>(
     }) }
 }
 
+// ── Portal (Overlay) ─────────────────────────────────────────────────────────
+
+/// A portal creates an overlay that renders outside the normal widget tree, floating on top.
+pub fn portal(show: ferrite_reactive::Signal<bool>, content: impl Fn() -> AnyView + 'static) -> AnyView {
+    struct PortalBuilder<F> {
+        show: ferrite_reactive::Signal<bool>,
+        content: F,
+        overrides: StyleOverrides,
+    }
+    impl<F: Fn() -> AnyView + 'static> ViewDescriptor for PortalBuilder<F> {
+        fn build(self: Box<Self>, tree: &mut ferrite_layout::LayoutTree) -> Box<dyn crate::Widget> {
+            let mut style = ferrite_layout::Style {
+                width: ferrite_layout::Size::Px(0.0),
+                height: ferrite_layout::Size::Px(0.0),
+                ..Default::default()
+            };
+            self.overrides.apply_to(&mut style);
+            let node = tree.new_leaf(style);
+            let widget = crate::widgets::PortalWidget {
+                node,
+                show: self.show,
+                content: Box::new(self.content),
+                active_overlay: None,
+                last_show: false, // will update on first frame
+            };
+            Box::new(widget)
+        }
+        fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
+    }
+
+    AnyView { inner: Box::new(PortalBuilder { show, content, overrides: StyleOverrides::default() }) }
+}
+
 struct ListDescriptor<T> {
     signal: Signal<Vec<T>>,
     view_fn: Rc<dyn Fn(&T) -> AnyView>,
@@ -798,6 +972,105 @@ impl<T: Clone + 'static> Widget for ListWidget<T> {
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
+
+// ── Modal (High-level Portal) ──────────────────────────────────────────────────
+
+pub fn modal(show: ferrite_reactive::Signal<bool>, mut on_close: impl FnMut() + Clone + 'static, content: impl Fn() -> AnyView + 'static) -> AnyView {
+    let content = std::rc::Rc::new(content);
+    portal(show.clone(), move || {
+        let mut close = on_close.clone();
+        let content = content.clone();
+        
+        let background = col([
+            col([
+                // The actual modal content
+                content()
+            ])
+            .padding(24.0)
+            .background(crate::context::try_inject::<crate::theme::Theme>().unwrap_or_default().surface)
+            .corner_radius(12.0)
+        ])
+        .fill()
+        .background(crate::Color::rgba(0.0, 0.0, 0.0, 0.5)) // dim backdrop
+        .align(ferrite_layout::AlignItems::Center)
+        .justify(ferrite_layout::JustifyContent::Center);
+        
+        // Wait, button currently has hover style so we don't want a button for background yet.
+        // We will just use the layout. If we need click-away to close, we'd add an invisible click absorber.
+        // For now, modal content needs to handle closing if it wants.
+        background
+    })
+}
+
+// ── Dropdown (Anchored Portal) ───────────────────────────────────────────────
+
+pub fn dropdown(
+    label: &str,
+    width: f32,
+    items: Vec<String>,
+    mut on_select: impl FnMut(usize, String) + Clone + 'static,
+) -> AnyView {
+    let show = ferrite_reactive::create_signal(false);
+    let anchor = Anchor::new();
+    
+    let trigger = button(label, {
+        let show = show.clone();
+        move || {
+            let current = show.get();
+            show.set(!current);
+        }
+    })
+    .width(width)
+    .anchor(anchor.clone());
+    
+    let items_rc = std::rc::Rc::new(items);
+    let portal_view = portal(show.clone(), move || {
+        let anchor_rect = anchor.get().unwrap_or_default();
+        let items_clone = items_rc.clone();
+        let mut on_select_clone = on_select.clone();
+        let show_dropdown = show.clone();
+        
+        let mut children = Vec::new();
+        for (i, item) in items_clone.iter().enumerate() {
+            let mut select_cb = on_select_clone.clone();
+            let show_cb = show_dropdown.clone();
+            let item_clone = item.clone();
+            
+            // Dropdown items now use standard button with single_line truncation enforced by the renderer
+            let text = item.clone();
+            
+            children.push(
+                button(&text, move || {
+                    select_cb(i, item_clone.clone());
+                    show_cb.set(false);
+                })
+                .background(crate::Color::WHITE)
+                .foreground(crate::Color::rgb(0.0, 0.0, 0.0))
+                .width(width)
+            );
+        }
+        
+        col([
+            col(children)
+                .background(crate::Color::rgb(0.9, 0.9, 0.9))
+                .padding(1.0)
+                .corner_radius(4.0)
+                .width(width + 2.0)
+                .position_type(ferrite_layout::PositionType::Absolute)
+                .inset(ferrite_layout::Inset {
+                    top: ferrite_layout::Size::Px(anchor_rect.y + anchor_rect.height + 6.0),
+                    left: ferrite_layout::Size::Px(anchor_rect.x),
+                    right: ferrite_layout::Size::Auto,
+                    bottom: ferrite_layout::Size::Auto,
+                })
+        ]).fill()
+    });
+    
+    col([
+        trigger,
+        portal_view
+    ])
+}
 
 #[cfg(test)]
 mod tests {

@@ -74,6 +74,8 @@ impl ApplicationHandler for Runner {
 
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_pos = (position.x, position.y);
+                self.app.set_hover_pos(Some((position.x as f32, position.y as f32)));
+                ferrite_core::request_repaint(); // Start hover detection
                 if self.drag_active {
                     self.app.drag(self.cursor_pos.0 as f32, self.cursor_pos.1 as f32);
                 }
@@ -140,6 +142,11 @@ impl ApplicationHandler for Runner {
             }
 
             WindowEvent::RedrawRequested => self.redraw(),
+            WindowEvent::CursorLeft { .. } => {
+                self.app.set_hover_pos(None);
+                ferrite_core::request_repaint();
+            }
+
             _ => {}
         }
 

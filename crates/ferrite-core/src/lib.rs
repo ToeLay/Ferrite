@@ -5,6 +5,8 @@ pub mod context;
 mod dirty;
 mod draw;
 pub mod event;
+pub mod overlay;
+pub mod toast;
 pub mod theme;
 pub mod view;
 mod widget;
@@ -15,16 +17,18 @@ pub use color::Color;
 pub use dirty::{request_repaint, take_dirty};
 pub use draw::DrawCommand;
 pub use event::{KeyCode, KeyEvent, Modifiers};
+pub use overlay::{show_overlay, remove_overlay};
 pub use view::{AnyView, View};
 pub use widget::Widget;
 pub use theme::Theme;
 
-pub use ferrite_layout::{AlignItems, Direction, Edges, JustifyContent, NodeId, Rect, Size, Style};
+pub use ferrite_layout::{AlignItems, Direction, Edges, JustifyContent, NodeId, Rect, Size, Style, PositionType, Inset};
 pub use ferrite_layout::LayoutTree;
 pub use ferrite_reactive as reactive;
 
-pub use view::{text, label, button, input, textarea, col, row, spacer, divider, checkbox, slider, switch, scroll, list};
+pub use view::{text, label, button, input, textarea, col, row, spacer, divider, checkbox, slider, switch, scroll, list, portal, modal, dropdown, Anchor};
 pub use context::{provide, inject, reset_context};
+pub use toast::{toast, toaster, ToastData};
 
 #[cfg(test)]
 mod tests {

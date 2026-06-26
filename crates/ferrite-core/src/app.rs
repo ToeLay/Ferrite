@@ -4,20 +4,38 @@ use ferrite_layout::{LayoutTree, NodeId, Rect};
 pub struct App {
     tree: LayoutTree,
     root: Box<dyn Widget>,
+    overlays: Vec<(crate::overlay::OverlayId, Box<dyn Widget>)>,
     focused: Option<NodeId>,
     active_drag: Option<NodeId>,
     last_frame: Option<std::time::Instant>,
+    hover_pos: Option<(f32, f32)>,
+    hover_time: f32,
+    hovered_tooltip: Option<String>,
 }
 
 impl App {
     pub fn new(tree: LayoutTree, root: Box<dyn Widget>) -> Self {
         ferrite_reactive::animation::set_wake_up(crate::dirty::request_repaint);
-        App { tree, root, focused: None, active_drag: None, last_frame: None }
+        App { 
+            tree, 
+            root, 
+            overlays: Vec::new(), 
+            focused: None, 
+            active_drag: None, 
+            last_frame: None,
+            hover_pos: None,
+            hover_time: 0.0,
+            hovered_tooltip: None,
+        }
     }
 
     pub fn layout_tree(&self) -> &LayoutTree { &self.tree }
     pub fn root_node_id(&self) -> NodeId { self.root.node_id() }
     pub fn root(&self) -> &dyn Widget { self.root.as_ref() }
+
+    pub fn set_hover_pos(&mut self, pos: Option<(f32, f32)>) {
+        self.hover_pos = pos;
+    }
 
     pub fn absolute_rect(&self, target: NodeId) -> Option<Rect> {
         fn walk(w: &dyn Widget, tree: &LayoutTree, ox: f32, oy: f32, target: NodeId) -> Option<Rect> {
@@ -44,47 +62,180 @@ impl App {
         // Tick animations (this might request repaint if animations are still running)
         ferrite_reactive::animation::tick_animations(dt);
 
+        crate::overlay::PENDING_OVERLAYS.with(|o| {
+            for (id, view) in o.borrow_mut().drain(..) {
+                let widget = view.build(&mut self.tree);
+                self.overlays.push((id, widget));
+            }
+        });
+        crate::overlay::REMOVED_OVERLAYS.with(|o| {
+            for id in o.borrow_mut().drain(..) {
+                if let Some(pos) = self.overlays.iter().position(|(oid, _)| *oid == id) {
+                    let (_, widget) = self.overlays.remove(pos);
+                    self.tree.remove(widget.node_id());
+                }
+            }
+        });
+
         self.root.update(&mut self.tree);
+        for (_, overlay) in &mut self.overlays {
+            overlay.update(&mut self.tree);
+        }
 
         let dirty_nodes = crate::dirty::take_dirty_nodes();
         for node in dirty_nodes {
             self.tree.mark_dirty(node);
         }
+        
         self.tree.compute(self.root.node_id(), width, height);
+        for (_, overlay) in &mut self.overlays {
+            self.tree.compute(overlay.node_id(), width, height);
+        }
+        
         let mut out = Vec::new();
         self.root.paint(&self.tree, 0.0, 0.0, &mut out);
+        for (_, overlay) in &self.overlays {
+            overlay.paint(&self.tree, 0.0, 0.0, &mut out);
+        }
+        
+        // Render Tooltip
+        let mut hit = None;
+        if let Some((hx, hy)) = self.hover_pos {
+            for cmd in out.iter().rev() {
+                if let crate::DrawCommand::TooltipRegion { rect, text } = cmd {
+                    if hx >= rect.x && hx <= rect.x + rect.width && hy >= rect.y && hy <= rect.y + rect.height {
+                        hit = Some((text.clone(), *rect));
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if let Some((hit_text, hit_rect)) = hit {
+            if Some(&hit_text) != self.hovered_tooltip.as_ref() {
+                self.hovered_tooltip = Some(hit_text.clone());
+                self.hover_time = 0.0;
+            } else {
+                self.hover_time += dt;
+            }
+            
+            if self.hover_time > 0.4 {
+                // Draw tooltip directly
+                let padding = 8.0;
+                let text_size = 14.0;
+                let char_width = text_size * 0.6; // Approximation
+                let tt_width = hit_text.len() as f32 * char_width + padding * 2.0;
+                let tt_height = text_size + padding * 2.0;
+                
+                // Position above cursor, or below if it hits top of screen
+                let (hx, hy) = self.hover_pos.unwrap();
+                let mut tx = hx - tt_width / 2.0;
+                let mut ty = hy + 24.0;
+                if ty + tt_height > height {
+                    ty = hy - tt_height - 10.0;
+                }
+                if tx < 10.0 { tx = 10.0; }
+                if tx + tt_width > width - 10.0 { tx = width - tt_width - 10.0; }
+                
+                out.push(crate::DrawCommand::Rect {
+                    rect: ferrite_layout::Rect { x: tx, y: ty, width: tt_width, height: tt_height },
+                    color: crate::Color::rgb(0.2, 0.2, 0.22),
+                    corner_radius: 6.0,
+                });
+                out.push(crate::DrawCommand::Text {
+                    x: tx + padding,
+                    y: ty + padding, // draw_text internally adds the baseline offset
+                    content: hit_text,
+                    size: text_size,
+                    color: crate::Color::rgb(1.0, 1.0, 1.0),
+                    max_width: None,
+                    single_line: true,
+                });
+            } else {
+                // Keep ticking until tooltip shows
+                crate::request_repaint();
+            }
+        } else {
+            self.hovered_tooltip = None;
+            self.hover_time = 0.0;
+        }
+        
         out
     }
 
     pub fn click(&mut self, x: f32, y: f32) -> bool {
-        let new_focus = self.root.find_focusable_at(&self.tree, 0.0, 0.0, x, y);
+        let mut new_focus = None;
+        let mut clicked = None;
+
+        for (_, overlay) in self.overlays.iter_mut().rev() {
+            if clicked.is_none() {
+                clicked = overlay.click_at(&self.tree, 0.0, 0.0, x, y);
+            }
+            if new_focus.is_none() {
+                new_focus = overlay.find_focusable_at(&self.tree, 0.0, 0.0, x, y);
+            }
+        }
+
+        if clicked.is_none() {
+            clicked = self.root.click_at(&self.tree, 0.0, 0.0, x, y);
+        }
+        if new_focus.is_none() {
+            new_focus = self.root.find_focusable_at(&self.tree, 0.0, 0.0, x, y);
+        }
+
         if new_focus != self.focused {
             if let Some(old) = self.focused { self.root.dispatch_focus(old, false); }
-            if let Some(new) = new_focus  { self.root.dispatch_focus(new, true);  }
+            if let Some(new) = new_focus  {
+                self.root.dispatch_focus(new, true);
+                for (_, overlay) in self.overlays.iter_mut().rev() {
+                    overlay.dispatch_focus(new, true);
+                }
+            }
             self.focused = new_focus;
         }
-        let clicked = self.root.click_at(&self.tree, 0.0, 0.0, x, y);
         self.active_drag = clicked;
         clicked.is_some()
     }
 
     pub fn double_click(&mut self, x: f32, y: f32) -> bool {
-        let clicked = self.root.double_click_at(&self.tree, 0.0, 0.0, x, y);
-        // Cancel active drag on double click so small mouse jitters
-        // don't immediately override the word selection with a normal drag.
+        let mut clicked = None;
+        for (_, overlay) in self.overlays.iter_mut().rev() {
+            if clicked.is_none() {
+                clicked = overlay.double_click_at(&self.tree, 0.0, 0.0, x, y);
+            }
+        }
+        if clicked.is_none() {
+            clicked = self.root.double_click_at(&self.tree, 0.0, 0.0, x, y);
+        }
         self.active_drag = None;
         clicked.is_some()
     }
 
     pub fn triple_click(&mut self, x: f32, y: f32) -> bool {
-        let clicked = self.root.triple_click_at(&self.tree, 0.0, 0.0, x, y);
+        let mut clicked = None;
+        for (_, overlay) in self.overlays.iter_mut().rev() {
+            if clicked.is_none() {
+                clicked = overlay.triple_click_at(&self.tree, 0.0, 0.0, x, y);
+            }
+        }
+        if clicked.is_none() {
+            clicked = self.root.triple_click_at(&self.tree, 0.0, 0.0, x, y);
+        }
         self.active_drag = None;
         clicked.is_some()
     }
 
     pub fn drag(&mut self, x: f32, y: f32) -> bool {
         if let Some(target) = self.active_drag {
-            self.root.dispatch_drag(target, &self.tree, 0.0, 0.0, x, y)
+            let mut dispatched = false;
+            for (_, overlay) in self.overlays.iter_mut().rev() {
+                if overlay.dispatch_drag(target, &self.tree, 0.0, 0.0, x, y) { dispatched = true; break; }
+            }
+            if !dispatched {
+                self.root.dispatch_drag(target, &self.tree, 0.0, 0.0, x, y)
+            } else {
+                true
+            }
         } else {
             false
         }
@@ -95,12 +246,23 @@ impl App {
     }
 
     pub fn scroll(&mut self, px: f32, py: f32, dx: f32, dy: f32) -> bool {
+        for (_, overlay) in self.overlays.iter_mut().rev() {
+            if overlay.scroll_at(&self.tree, 0.0, 0.0, px, py, dx, dy) { return true; }
+        }
         self.root.scroll_at(&self.tree, 0.0, 0.0, px, py, dx, dy)
     }
 
     pub fn key_event(&mut self, event: KeyEvent) -> bool {
         if let Some(focused) = self.focused {
-            self.root.dispatch_key(focused, &event)
+            let mut dispatched = false;
+            for (_, overlay) in self.overlays.iter_mut().rev() {
+                if overlay.dispatch_key(focused, &event) { dispatched = true; break; }
+            }
+            if !dispatched {
+                self.root.dispatch_key(focused, &event)
+            } else {
+                true
+            }
         } else {
             false
         }
@@ -109,6 +271,9 @@ impl App {
     pub fn blur(&mut self) {
         if let Some(old) = self.focused.take() {
             self.root.dispatch_focus(old, false);
+            for (_, overlay) in self.overlays.iter_mut().rev() {
+                overlay.dispatch_focus(old, false);
+            }
         }
     }
 
@@ -119,6 +284,9 @@ impl App {
         }
         let mut out = Vec::new();
         walk(self.root.as_ref(), &mut out);
+        for (_, overlay) in &self.overlays {
+            walk(overlay.as_ref(), &mut out);
+        }
         out
     }
 

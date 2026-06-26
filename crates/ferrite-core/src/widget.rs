@@ -27,6 +27,9 @@ pub trait Widget {
     /// Return `true` to consume the event.
     fn on_key(&mut self, _event: &KeyEvent) -> bool { false }
 
+    /// Optional tooltip text to display when the widget is hovered.
+    fn tooltip(&self) -> Option<&str> { None }
+
     /// Called before layout to process reactive state changes or dynamic children
     fn update(&mut self, _tree: &mut LayoutTree) {}
 

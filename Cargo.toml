@@ -8,8 +8,11 @@ members = [
     "examples/slider",
     "examples/scroll",
     "examples/text_wrap",
-    "examples/dynamic_list"
-, "examples/animation_showcase", "examples/textarea"]
+    "examples/dynamic_list",
+    "examples/animation_showcase",
+    "examples/textarea",
+    "examples/overlays",
+]
 
 [workspace.package]
 version = "0.1.0"

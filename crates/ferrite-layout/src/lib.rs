@@ -47,6 +47,16 @@ impl From<Size> for Dimension {
     }
 }
 
+impl From<Size> for taffy::style::LengthPercentageAuto {
+    fn from(s: Size) -> Self {
+        match s {
+            Size::Auto => taffy::style::LengthPercentageAuto::Auto,
+            Size::Px(v) => taffy::style::LengthPercentageAuto::Length(v),
+            Size::Percent(v) => taffy::style::LengthPercentageAuto::Percent(v / 100.0),
+        }
+    }
+}
+
 /// Edge values (padding/margin/gap), in logical pixels.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct Edges {
@@ -62,6 +72,38 @@ impl Edges {
     }
     pub fn symmetric(horizontal: f32, vertical: f32) -> Self {
         Edges { top: vertical, right: horizontal, bottom: vertical, left: horizontal }
+    }
+}
+
+/// Positioning type: relative to normal flow, or absolute.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum PositionType {
+    #[default]
+    Relative,
+    Absolute,
+}
+
+impl From<PositionType> for taffy::Position {
+    fn from(p: PositionType) -> Self {
+        match p {
+            PositionType::Relative => taffy::Position::Relative,
+            PositionType::Absolute => taffy::Position::Absolute,
+        }
+    }
+}
+
+/// Inset values for absolute positioning.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub struct Inset {
+    pub top: Size,
+    pub right: Size,
+    pub bottom: Size,
+    pub left: Size,
+}
+
+impl Inset {
+    pub fn all(v: Size) -> Self {
+        Inset { top: v, right: v, bottom: v, left: v }
     }
 }
 
@@ -102,6 +144,8 @@ pub struct Style {
     pub align_items: AlignItems,
     pub overflow_x: Overflow,
     pub overflow_y: Overflow,
+    pub position_type: PositionType,
+    pub inset: Inset,
 }
 
 impl Default for Style {
@@ -123,6 +167,8 @@ impl Default for Style {
             align_items: AlignItems::Stretch,
             overflow_x: Overflow::Visible,
             overflow_y: Overflow::Visible,
+            position_type: PositionType::Relative,
+            inset: Inset::default(),
         }
     }
 }
@@ -151,6 +197,13 @@ fn to_taffy_style(s: &Style) -> taffy::Style {
 
     taffy::Style {
         display: taffy::Display::Flex,
+        position: s.position_type.into(),
+        inset: Rect {
+            left: s.inset.left.into(),
+            right: s.inset.right.into(),
+            top: s.inset.top.into(),
+            bottom: s.inset.bottom.into(),
+        },
         flex_direction: s.direction.into(),
         size: taffy::Size { width: s.width.into(), height: s.height.into() },
         padding: Rect {
@@ -205,7 +258,6 @@ pub enum NodeKind {
     Text { content: Rc<RefCell<String>>, font_size: f32 },
     Other,
 }
-
 /// Owns the flexbox tree and the cached result of the last `compute` call.
 pub struct LayoutTree {
     inner: TaffyTree<NodeKind>,
