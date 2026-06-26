@@ -306,6 +306,7 @@ impl ViewDescriptor for InputDescriptor {
             font_size, width: input_width, theme,
             layout_dirty: true, last_val: String::new(),
             last_cursor: 0, last_selection: None, last_width: 0.0,
+            undo_stack: Vec::new(), redo_stack: Vec::new(),
         })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
@@ -354,6 +355,7 @@ impl ViewDescriptor for TextAreaDescriptor {
             font_size, theme,
             layout_dirty: true, last_val: String::new(),
             last_cursor: 0, last_selection: None, last_width: 0.0,
+            undo_stack: Vec::new(), redo_stack: Vec::new(),
         })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }

@@ -5,6 +5,13 @@ use crate::theme::Theme;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+#[derive(Clone, Debug)]
+pub struct TextEditState {
+    pub value: String,
+    pub cursor: usize,
+    pub selection_start: Option<usize>,
+}
+
 // ── Container ────────────────────────────────────────────────────────────────
 
 pub struct Container {
@@ -131,6 +138,8 @@ pub struct TextInput {
     pub(crate) last_cursor: usize,
     pub(crate) last_selection: Option<usize>,
     pub(crate) last_width: f32,
+    pub(crate) undo_stack: Vec<TextEditState>,
+    pub(crate) redo_stack: Vec<TextEditState>,
 }
 
 impl TextInput {
@@ -140,6 +149,54 @@ impl TextInput {
         self.width = w;
         tree.set_style(self.node, text_input_style(w, self.font_size));
         self
+    }
+
+    fn save_state(&mut self) {
+        let val = self.value.get();
+        if let Some(last) = self.undo_stack.last() {
+            if last.value == val { return; }
+        }
+        self.undo_stack.push(TextEditState {
+            value: val,
+            cursor: self.cursor,
+            selection_start: self.selection_start,
+        });
+        if self.undo_stack.len() > 100 {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+    }
+
+    fn undo(&mut self) {
+        if let Some(prev) = self.undo_stack.pop() {
+            let current_val = self.value.get();
+            self.redo_stack.push(TextEditState {
+                value: current_val,
+                cursor: self.cursor,
+                selection_start: self.selection_start,
+            });
+            self.value.set(prev.value);
+            self.cursor = prev.cursor;
+            self.selection_start = prev.selection_start;
+            self.layout_dirty = true;
+            request_repaint();
+        }
+    }
+
+    fn redo(&mut self) {
+        if let Some(next) = self.redo_stack.pop() {
+            let current_val = self.value.get();
+            self.undo_stack.push(TextEditState {
+                value: current_val,
+                cursor: self.cursor,
+                selection_start: self.selection_start,
+            });
+            self.value.set(next.value);
+            self.cursor = next.cursor;
+            self.selection_start = next.selection_start;
+            self.layout_dirty = true;
+            request_repaint();
+        }
     }
 
     pub fn font_size(mut self, tree: &mut LayoutTree, size: f32) -> Self {
@@ -342,8 +399,17 @@ impl Widget for TextInput {
                     }
                     return true;
                 }
+                if is_cmd && (*ch == 'z' || *ch == 'Z') {
+                    if event.modifiers.shift {
+                        self.redo();
+                    } else {
+                        self.undo();
+                    }
+                    return true;
+                }
                 if is_cmd && (*ch == 'v' || *ch == 'V') {
                     if let Some(text) = crate::clipboard::get_text() {
+                        self.save_state();
                         self.delete_selection();
                         let mut s = self.value.get();
                         let byte_pos = s.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(s.len());
@@ -356,6 +422,7 @@ impl Widget for TextInput {
                 }
                 // Typing a normal char
                 if !is_cmd {
+                    self.save_state();
                     self.delete_selection();
                     let mut s = self.value.get();
                     let byte_pos = s.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(s.len());
@@ -367,6 +434,7 @@ impl Widget for TextInput {
                 true
             }
             KeyCode::Backspace => {
+                self.save_state();
                 if !self.delete_selection() && self.cursor > 0 {
                     let mut s = self.value.get();
                     let byte_pos = s.char_indices().nth(self.cursor - 1).map(|(i,_)| i).unwrap_or(0);
@@ -378,6 +446,7 @@ impl Widget for TextInput {
                 true
             }
             KeyCode::Delete => {
+                self.save_state();
                 if !self.delete_selection() && self.cursor < char_count {
                     let mut s = self.value.get();
                     let byte_pos = s.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(s.len());
@@ -820,9 +889,59 @@ pub struct TextArea {
     pub(crate) last_cursor: usize,
     pub(crate) last_selection: Option<usize>,
     pub(crate) last_width: f32,
+    pub(crate) undo_stack: Vec<TextEditState>,
+    pub(crate) redo_stack: Vec<TextEditState>,
 }
 
 impl TextArea {
+    fn save_state(&mut self) {
+        let val = self.value.get();
+        if let Some(last) = self.undo_stack.last() {
+            if last.value == val { return; }
+        }
+        self.undo_stack.push(TextEditState {
+            value: val,
+            cursor: self.cursor,
+            selection_start: self.selection_start,
+        });
+        if self.undo_stack.len() > 100 {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+    }
+
+    fn undo(&mut self) {
+        if let Some(prev) = self.undo_stack.pop() {
+            let current_val = self.value.get();
+            self.redo_stack.push(TextEditState {
+                value: current_val,
+                cursor: self.cursor,
+                selection_start: self.selection_start,
+            });
+            self.value.set(prev.value);
+            self.cursor = prev.cursor;
+            self.selection_start = prev.selection_start;
+            self.layout_dirty = true;
+            request_repaint();
+        }
+    }
+
+    fn redo(&mut self) {
+        if let Some(next) = self.redo_stack.pop() {
+            let current_val = self.value.get();
+            self.undo_stack.push(TextEditState {
+                value: current_val,
+                cursor: self.cursor,
+                selection_start: self.selection_start,
+            });
+            self.value.set(next.value);
+            self.cursor = next.cursor;
+            self.selection_start = next.selection_start;
+            self.layout_dirty = true;
+            request_repaint();
+        }
+    }
+
     fn char_to_line_col(&self, index: usize) -> (usize, usize) {
         let val = self.value.get();
         let mut cur_line = 0;
@@ -1124,8 +1243,17 @@ impl Widget for TextArea {
                     }
                     return true;
                 }
+                if is_cmd && (*ch == 'z' || *ch == 'Z') {
+                    if event.modifiers.shift {
+                        self.redo();
+                    } else {
+                        self.undo();
+                    }
+                    return true;
+                }
                 if is_cmd && (*ch == 'v' || *ch == 'V') {
                     if let Some(text) = crate::clipboard::get_text() {
+                        self.save_state();
                         self.delete_selection();
                         let mut s = self.value.get();
                         let byte_pos = s.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(s.len());
@@ -1137,6 +1265,7 @@ impl Widget for TextArea {
                     return true;
                 }
                 if !is_cmd {
+                    self.save_state();
                     self.delete_selection();
                     let mut s = self.value.get();
                     let byte_pos = s.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(s.len());
@@ -1148,6 +1277,7 @@ impl Widget for TextArea {
                 true
             }
             KeyCode::Return => {
+                self.save_state();
                 self.delete_selection();
                 let mut s = self.value.get();
                 let byte_pos = s.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(s.len());
@@ -1158,6 +1288,7 @@ impl Widget for TextArea {
                 true
             }
             KeyCode::Backspace => {
+                self.save_state();
                 if !self.delete_selection() && self.cursor > 0 {
                     let mut s = self.value.get();
                     let byte_pos = s.char_indices().nth(self.cursor - 1).map(|(i,_)| i).unwrap_or(0);
@@ -1169,6 +1300,7 @@ impl Widget for TextArea {
                 true
             }
             KeyCode::Delete => {
+                self.save_state();
                 if !self.delete_selection() && self.cursor < char_count {
                     let mut s = self.value.get();
                     let byte_pos = s.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(s.len());
