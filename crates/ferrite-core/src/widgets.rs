@@ -97,6 +97,11 @@ pub struct TextInput {
     pub(crate) font_size: f32,
     pub(crate) width: f32,
     pub(crate) theme: Theme,
+    pub(crate) layout_dirty: bool,
+    pub(crate) last_val: String,
+    pub(crate) last_cursor: usize,
+    pub(crate) last_selection: Option<usize>,
+    pub(crate) last_width: f32,
 }
 
 impl TextInput {
@@ -187,14 +192,14 @@ impl Widget for TextInput {
         if rel_x <= 0.0 {
             found_idx = 0;
         } else {
-            for (i, (byte_idx, ch)) in val.char_indices().enumerate() {
-                let s = &val[..byte_idx];
-                let (w, _) = tree.measure_text(s, self.font_size, None);
+            let mut x_acc = 0.0f32;
+            for (i, ch) in val.chars().enumerate() {
                 let (cw, _) = tree.measure_text(&ch.to_string(), self.font_size, None);
-                if rel_x < w + cw / 2.0 {
+                if rel_x < x_acc + cw / 2.0 {
                     found_idx = i;
                     break;
                 }
+                x_acc += cw;
             }
         }
         
@@ -219,14 +224,14 @@ impl Widget for TextInput {
         if rel_x <= 0.0 {
             found_idx = 0;
         } else {
-            for (i, (byte_idx, ch)) in val.char_indices().enumerate() {
-                let s = &val[..byte_idx];
-                let (w, _) = tree.measure_text(s, self.font_size, None);
+            let mut x_acc = 0.0f32;
+            for (i, ch) in val.chars().enumerate() {
                 let (cw, _) = tree.measure_text(&ch.to_string(), self.font_size, None);
-                if rel_x < w + cw / 2.0 {
+                if rel_x < x_acc + cw / 2.0 {
                     found_idx = i;
                     break;
                 }
+                x_acc += cw;
             }
         }
         
@@ -239,6 +244,18 @@ impl Widget for TextInput {
     
     fn update(&mut self, tree: &mut LayoutTree) {
         let val = self.value.get();
+        let r = tree.layout(self.node_id());
+        if val != self.last_val || self.cursor != self.last_cursor || self.selection_start != self.last_selection || r.width != self.last_width {
+            self.last_val = val.clone();
+            self.last_cursor = self.cursor;
+            self.last_selection = self.selection_start;
+            self.last_width = r.width;
+            self.layout_dirty = true;
+            request_repaint();
+        }
+        if !self.layout_dirty { return; }
+        self.layout_dirty = false;
+        
         let char_count = val.chars().count();
         if self.cursor > char_count {
             self.cursor = char_count;
@@ -264,7 +281,6 @@ impl Widget for TextInput {
             self.selection_start_px = None;
         }
         
-        let r = tree.layout(self.node_id());
         let (total_w, _) = tree.measure_text(&val, self.font_size, None);
         self.ensure_cursor_visible(r.width, total_w);
     }
@@ -432,7 +448,7 @@ impl Widget for Spacer {
     fn node_id(&self) -> NodeId { self.node }
 }
 
-// ── Divider ──────────────────────────────────────────────────────────────────
+// ── Divider ────────────────────────────────────────────────────────────────
 
 pub struct Divider {
     pub(crate) node: NodeId,
@@ -672,6 +688,15 @@ impl Widget for Scroll {
         false
     }
 
+    fn dispatch_drag(&mut self, target: NodeId, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
+        if self.node_id() == target {
+            return self.drag_at(tree, ox, oy, px, py);
+        }
+        let r = tree.layout(self.node_id());
+        let ax = ox + r.x; let ay = oy + r.y;
+        self.child.dispatch_drag(target, tree, ax - self.scroll_x, ay - self.scroll_y, px, py)
+    }
+
     fn scroll_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32, dx: f32, dy: f32) -> bool {
         let r = tree.layout(self.node_id());
         let ax = ox + r.x; let ay = oy + r.y;
@@ -733,6 +758,11 @@ pub struct TextArea {
     pub(crate) line_height: f32,
     pub(crate) font_size: f32,
     pub(crate) theme: Theme,
+    pub(crate) layout_dirty: bool,
+    pub(crate) last_val: String,
+    pub(crate) last_cursor: usize,
+    pub(crate) last_selection: Option<usize>,
+    pub(crate) last_width: f32,
 }
 
 impl TextArea {
@@ -854,14 +884,14 @@ impl Widget for TextArea {
         if rel_x <= 0.0 {
             found_col = 0;
         } else {
-            for (i, (byte_idx, ch)) in line_str.char_indices().enumerate() {
-                let s = &line_str[..byte_idx];
-                let (w, _) = tree.measure_text(s, self.font_size, None);
+            let mut x_acc = 0.0f32;
+            for (i, ch) in line_str.chars().enumerate() {
                 let (cw, _) = tree.measure_text(&ch.to_string(), self.font_size, None);
-                if rel_x < w + cw / 2.0 {
+                if rel_x < x_acc + cw / 2.0 {
                     found_col = i;
                     break;
                 }
+                x_acc += cw;
             }
         }
         
@@ -911,14 +941,14 @@ impl Widget for TextArea {
         if rel_x <= 0.0 {
             found_col = 0;
         } else {
-            for (i, (byte_idx, ch)) in line_str.char_indices().enumerate() {
-                let s = &line_str[..byte_idx];
-                let (w, _) = tree.measure_text(s, self.font_size, None);
+            let mut x_acc = 0.0f32;
+            for (i, ch) in line_str.chars().enumerate() {
                 let (cw, _) = tree.measure_text(&ch.to_string(), self.font_size, None);
-                if rel_x < w + cw / 2.0 {
+                if rel_x < x_acc + cw / 2.0 {
                     found_col = i;
                     break;
                 }
+                x_acc += cw;
             }
         }
         
@@ -936,6 +966,18 @@ impl Widget for TextArea {
     
     fn update(&mut self, tree: &mut LayoutTree) {
         let val = self.value.get();
+        let r = tree.layout(self.node_id());
+        if val != self.last_val || self.cursor != self.last_cursor || self.selection_start != self.last_selection || r.width != self.last_width {
+            self.last_val = val.clone();
+            self.last_cursor = self.cursor;
+            self.last_selection = self.selection_start;
+            self.last_width = r.width;
+            self.layout_dirty = true;
+            request_repaint();
+        }
+        if !self.layout_dirty { return; }
+        self.layout_dirty = false;
+        
         let char_count = val.chars().count();
         if self.cursor > char_count {
             self.cursor = char_count;
@@ -946,7 +988,6 @@ impl Widget for TextArea {
             }
         }
         
-        let r = tree.layout(self.node_id());
         let pad = 10.0;
         let inner_w = r.width - 2.0 * pad;
         
@@ -960,13 +1001,12 @@ impl Widget for TextArea {
         
         let (cur_line, cur_col) = self.char_to_line_col(self.cursor);
         
-        let mut byte_pos_start_of_line = 0;
         let mut chars_skipped = 0;
         for (i, &lc) in line_chars.iter().enumerate() {
             if i == cur_line { break; }
             chars_skipped += lc;
         }
-        byte_pos_start_of_line = val.char_indices().nth(chars_skipped).map(|(i,_)| i).unwrap_or(val.len());
+        let byte_pos_start_of_line = val.char_indices().nth(chars_skipped).map(|(i,_)| i).unwrap_or(val.len());
         
         let cursor_byte = val.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(val.len());
         let line_str_before_cursor = &val[byte_pos_start_of_line..cursor_byte];
@@ -1104,18 +1144,23 @@ impl Widget for TextArea {
                     let mut skipped = 0;
                     for i in 0..target_line { skipped += self.line_chars[i]; }
                     self.cursor = skipped + new_col;
+                    self.layout_dirty = true;
                     request_repaint();
                 }
                 true
             }
             KeyCode::Home  => { 
                 self.handle_shift(event.modifiers.shift);
-                self.cursor = 0; request_repaint(); 
+                self.cursor = 0; 
+                self.layout_dirty = true;
+                request_repaint(); 
                 true 
             }
             KeyCode::End   => { 
                 self.handle_shift(event.modifiers.shift);
-                self.cursor = char_count; request_repaint(); 
+                self.cursor = char_count; 
+                self.layout_dirty = true;
+                request_repaint(); 
                 true 
             }
             KeyCode::Tab | KeyCode::Escape => false,

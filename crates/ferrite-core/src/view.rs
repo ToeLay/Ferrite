@@ -303,6 +303,8 @@ impl ViewDescriptor for InputDescriptor {
             node, value, placeholder, focused: false, cursor: 0, selection_start: None, scroll_x: 0.0,
             cursor_px: 0.0, selection_start_px: None,
             font_size, width: input_width, theme,
+            layout_dirty: true, last_val: String::new(),
+            last_cursor: 0, last_selection: None, last_width: 0.0,
         })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
@@ -349,6 +351,8 @@ impl ViewDescriptor for TextAreaDescriptor {
             selection_start_px: None, selection_start_py: None,
             line_chars: Vec::new(), line_height: font_size * 1.4,
             font_size, theme,
+            layout_dirty: true, last_val: String::new(),
+            last_cursor: 0, last_selection: None, last_width: 0.0,
         })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
