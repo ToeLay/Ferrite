@@ -389,12 +389,22 @@ impl Widget for TextInput {
             }
             KeyCode::Left  => { 
                 self.handle_shift(event.modifiers.shift);
-                if self.cursor > 0 { self.cursor -= 1; request_repaint(); } 
+                if is_cmd {
+                    self.cursor = word_left(&val, self.cursor);
+                } else if self.cursor > 0 { 
+                    self.cursor -= 1; 
+                } 
+                request_repaint();
                 true 
             }
             KeyCode::Right => { 
                 self.handle_shift(event.modifiers.shift);
-                if self.cursor < char_count { self.cursor += 1; request_repaint(); } 
+                if is_cmd {
+                    self.cursor = word_right(&val, self.cursor);
+                } else if self.cursor < char_count { 
+                    self.cursor += 1; 
+                } 
+                request_repaint();
                 true 
             }
             KeyCode::Home  => { 
@@ -1152,12 +1162,22 @@ impl Widget for TextArea {
             }
             KeyCode::Left  => { 
                 self.handle_shift(event.modifiers.shift);
-                if self.cursor > 0 { self.cursor -= 1; request_repaint(); } 
+                if is_cmd {
+                    self.cursor = word_left(&val, self.cursor);
+                } else if self.cursor > 0 { 
+                    self.cursor -= 1; 
+                } 
+                request_repaint();
                 true 
             }
             KeyCode::Right => { 
                 self.handle_shift(event.modifiers.shift);
-                if self.cursor < char_count { self.cursor += 1; request_repaint(); } 
+                if is_cmd {
+                    self.cursor = word_right(&val, self.cursor);
+                } else if self.cursor < char_count { 
+                    self.cursor += 1; 
+                } 
+                request_repaint();
                 true 
             }
             KeyCode::Up | KeyCode::Down => {
@@ -1284,4 +1304,22 @@ impl Widget for TextArea {
         
         out.push(DrawCommand::PopClip);
     }
+}
+
+fn word_left(s: &str, mut cursor: usize) -> usize {
+    let chars: Vec<char> = s.chars().collect();
+    if cursor == 0 { return 0; }
+    cursor -= 1;
+    while cursor > 0 && chars[cursor].is_whitespace() { cursor -= 1; }
+    while cursor > 0 && !chars[cursor - 1].is_whitespace() { cursor -= 1; }
+    cursor
+}
+
+fn word_right(s: &str, mut cursor: usize) -> usize {
+    let chars: Vec<char> = s.chars().collect();
+    let len = chars.len();
+    if cursor >= len { return len; }
+    while cursor < len && chars[cursor].is_whitespace() { cursor += 1; }
+    while cursor < len && !chars[cursor].is_whitespace() { cursor += 1; }
+    cursor
 }
