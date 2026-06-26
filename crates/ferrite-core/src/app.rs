@@ -97,4 +97,46 @@ impl App {
             self.root.dispatch_focus(old, false);
         }
     }
+
+    pub fn collect_focusable(&self) -> Vec<NodeId> {
+        fn walk(w: &dyn crate::widget::Widget, out: &mut Vec<NodeId>) {
+            if w.is_focusable() { out.push(w.node_id()); }
+            for child in w.children() { walk(child.as_ref(), out); }
+        }
+        let mut out = Vec::new();
+        walk(self.root.as_ref(), &mut out);
+        out
+    }
+
+    pub fn focus_next(&mut self) {
+        let nodes = self.collect_focusable();
+        if nodes.is_empty() { return; }
+        let next = match self.focused {
+            None => nodes[0],
+            Some(cur) => {
+                let idx = nodes.iter().position(|&n| n == cur).unwrap_or(0);
+                nodes[(idx + 1) % nodes.len()]
+            }
+        };
+        if let Some(old) = self.focused { self.root.dispatch_focus(old, false); }
+        self.root.dispatch_focus(next, true);
+        self.focused = Some(next);
+        crate::dirty::request_repaint();
+    }
+
+    pub fn focus_prev(&mut self) {
+        let nodes = self.collect_focusable();
+        if nodes.is_empty() { return; }
+        let next = match self.focused {
+            None => nodes[nodes.len() - 1],
+            Some(cur) => {
+                let idx = nodes.iter().position(|&n| n == cur).unwrap_or(0);
+                nodes[(idx + nodes.len() - 1) % nodes.len()]
+            }
+        };
+        if let Some(old) = self.focused { self.root.dispatch_focus(old, false); }
+        self.root.dispatch_focus(next, true);
+        self.focused = Some(next);
+        crate::dirty::request_repaint();
+    }
 }

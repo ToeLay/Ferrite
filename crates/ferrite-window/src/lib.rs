@@ -99,7 +99,11 @@ impl ApplicationHandler for Runner {
                 if key_event.state != ElementState::Pressed { return; }
                 if let Some(fe) = map_key(&key_event.logical_key, self.modifiers) {
                     if fe.key == KeyCode::Tab {
-                        self.app.blur();
+                        if fe.modifiers.shift {
+                            self.app.focus_prev();
+                        } else {
+                            self.app.focus_next();
+                        }
                     } else {
                         self.app.key_event(fe);
                     }
