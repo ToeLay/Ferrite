@@ -69,7 +69,7 @@ pub trait Widget {
         if self.on_double_click() { Some(self.node_id()) } else { None }
     }
 
-    fn on_double_click(&mut self) -> bool { false }
+    fn on_double_click(&mut self) -> bool { self.on_click() }
 
     fn triple_click_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<NodeId> {
         let r = tree.layout(self.node_id());
@@ -81,7 +81,7 @@ pub trait Widget {
         if self.on_triple_click() { Some(self.node_id()) } else { None }
     }
 
-    fn on_triple_click(&mut self) -> bool { false }
+    fn on_triple_click(&mut self) -> bool { self.on_click() }
 
     fn drag_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
         let r = tree.layout(self.node_id());
