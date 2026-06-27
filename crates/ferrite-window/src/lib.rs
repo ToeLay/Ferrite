@@ -50,6 +50,7 @@ impl ApplicationHandler for Runner {
         let w = NonZeroU32::new(size.width.max(1)).unwrap();
         let h = NonZeroU32::new(size.height.max(1)).unwrap();
         surface.resize(w, h).expect("initial resize");
+        window.set_ime_allowed(true);
         window.request_redraw();
         self.window = Some(window);
         self.surface = Some(surface);
@@ -151,6 +152,16 @@ impl ApplicationHandler for Runner {
                         ferrite_core::request_repaint();
                     }
                 }
+            }
+
+            WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
+                for ch in text.chars() {
+                    self.app.key_event(KeyEvent {
+                        key: KeyCode::Char(ch),
+                        modifiers: Modifiers::default(),
+                    });
+                }
+                ferrite_core::request_repaint();
             }
 
             WindowEvent::RedrawRequested => self.redraw(),
