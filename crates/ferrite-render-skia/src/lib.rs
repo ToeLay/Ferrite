@@ -21,7 +21,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use tiny_skia::{FillRule, Mask, Paint, PathBuilder, Pixmap, Rect as SkRect, Transform};
 
-static FONT_BYTES: &[u8] = include_bytes!("../assets/IBMPlexMono-Regular.ttf");
+static FONT_BYTES: &[u8] = include_bytes!("../assets/InterDisplay-Regular.ttf");
 
 fn font() -> &'static Font {
     static FONT: OnceLock<Font> = OnceLock::new();
