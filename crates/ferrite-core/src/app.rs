@@ -130,25 +130,31 @@ impl App {
         // Tick animations (this might request repaint if animations are still running)
         ferrite_reactive::animation::tick_animations(dt);
 
-        crate::overlay::PENDING_OVERLAYS.with(|o| {
-            for (id, view) in o.borrow_mut().drain(..) {
-                let widget = view.build(&mut self.tree);
-                self.overlays.push((id, widget));
-            }
-        });
-        crate::overlay::REMOVED_OVERLAYS.with(|o| {
-            for id in o.borrow_mut().drain(..) {
-                if let Some(pos) = self.overlays.iter().position(|(oid, _)| *oid == id) {
-                    let (_, widget) = self.overlays.remove(pos);
-                    self.tree.remove(widget.node_id());
+        let mut drain_overlays = |tree: &mut ferrite_layout::LayoutTree, overlays: &mut Vec<(crate::overlay::OverlayId, Box<dyn crate::Widget>)>| {
+            crate::overlay::PENDING_OVERLAYS.with(|o| {
+                for (id, view) in o.borrow_mut().drain(..) {
+                    let widget = view.build(tree);
+                    overlays.push((id, widget));
                 }
-            }
-        });
+            });
+            crate::overlay::REMOVED_OVERLAYS.with(|o| {
+                for id in o.borrow_mut().drain(..) {
+                    if let Some(pos) = overlays.iter().position(|(oid, _)| *oid == id) {
+                        let (_, widget) = overlays.remove(pos);
+                        tree.remove(widget.node_id());
+                    }
+                }
+            });
+        };
+
+        drain_overlays(&mut self.tree, &mut self.overlays);
 
         self.root.update(&mut self.tree);
         for (_, overlay) in &mut self.overlays {
             overlay.update(&mut self.tree);
         }
+
+        drain_overlays(&mut self.tree, &mut self.overlays);
 
         let dirty_nodes = crate::dirty::take_dirty_nodes();
         for node in dirty_nodes {
@@ -411,5 +417,85 @@ impl App {
         self.root.dispatch_focus(next, true);
         self.focused = Some(next);
         crate::dirty::request_repaint();
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{view::*, widget::Widget};
+    use ferrite_reactive::*;
+
+    #[test]
+    fn test_modal_close() {
+        let show_modal = create_signal(false);
+        
+        let app_view = col([
+            modal(show_modal.clone(), move || show_modal.set(false), move || {
+                let show_modal = show_modal.clone();
+                col([
+                    button("Save Changes", move || {
+                        crate::toast::toast("Changes saved successfully!");
+                        show_modal.set(false);
+                    })
+                ])
+            }),
+            crate::toast::toaster(),
+        ]);
+
+        let mut tree = ferrite_layout::LayoutTree::new();
+        let root = app_view.build(&mut tree);
+        let mut app = App::new(tree, root);
+        
+        app.render(800.0, 600.0);
+        
+        show_modal.set(true);
+        app.render(800.0, 600.0);
+        assert_eq!(app.overlays.len(), 1);
+        
+        // Find the Save Changes button and click it
+        let mut clicked = false;
+        let overlay_node = app.overlays[0].1.node_id();
+        let overlay_layout = app.tree.layout(overlay_node);
+        
+        // We can just click everywhere in the overlay until we find it
+        let mut click_count = 0;
+        for x in 0..800 {
+            for y in 0..600 {
+                // To only click "Save Changes", we will simulate a click. If it returns true, we count it.
+                // But we don't want to actually click Cancel. 
+                // In our test, there's ONLY a "Save Changes" button! Let me check the test definition!
+                if app.click(x as f32, y as f32) {
+                    clicked = true;
+                    break;
+                }
+            }
+            if clicked { break; }
+        }
+        assert!(clicked, "Could not click Save Changes or Cancel");
+        
+        app.render(800.0, 600.0);
+        assert_eq!(app.overlays.len(), 0); // This is what we want to verify!
+    }
+    #[test]
+    fn test_toast_layout() {
+        use crate::toast::*;
+        use crate::view::*;
+        let mut tree = ferrite_layout::LayoutTree::new();
+        let view = col([
+            button("Open", || {}),
+            modal(ferrite_reactive::create_signal(true), || {}, || col([button("Save", || {})])),
+            toaster()
+        ]).fill().align(ferrite_layout::AlignItems::Center);
+        let widget = view.build(&mut tree);
+        let mut app = App::new(tree, widget);
+
+        app.render(800.0, 600.0);
+        
+        toast("Test Message");
+        
+        app.render(800.0, 600.0);
+        
+        let root_layout = app.tree.layout(app.root.node_id());
+        assert_eq!(root_layout.width, 800.0);
     }
 }

@@ -19,6 +19,7 @@ pub struct Container {
     pub(crate) children: Vec<Box<dyn Widget>>,
     pub(crate) background: Option<Color>,
     pub(crate) corner_radius: f32,
+    pub(crate) clip: bool,
 }
 impl Container {
     pub fn background(mut self, color: Color) -> Self { self.background = Some(color); self }
@@ -30,6 +31,24 @@ impl Widget for Container {
     fn children_mut(&mut self) -> &mut [Box<dyn Widget>] { &mut self.children }
     fn update(&mut self, tree: &mut LayoutTree) {
         for child in &mut self.children { child.update(tree); }
+    }
+    fn paint(&self, tree: &ferrite_layout::LayoutTree, ox: f32, oy: f32, out: &mut Vec<crate::DrawCommand>) {
+        let r = tree.layout(self.node);
+        let abs = Rect { x: ox + r.x, y: oy + r.y, width: r.width, height: r.height };
+        
+        self.paint_self(abs, out);
+        
+        if self.clip {
+            out.push(crate::DrawCommand::PushClip { rect: abs });
+        }
+        
+        for child in self.children() { 
+            child.paint(tree, abs.x, abs.y, out); 
+        }
+        
+        if self.clip {
+            out.push(crate::DrawCommand::PopClip);
+        }
     }
     fn paint_self(&self, rect: Rect, out: &mut Vec<DrawCommand>) {
         if let Some(color) = self.background {
@@ -45,6 +64,7 @@ pub struct Text {
     pub(crate) content: Rc<RefCell<String>>,
     pub(crate) color: Color,
     pub(crate) size: f32,
+    pub(crate) single_line: bool,
 }
 impl Text {
     pub fn color(mut self, color: Color) -> Self { self.color = color; self }
@@ -57,7 +77,7 @@ impl Widget for Text {
             content: self.content.borrow().clone(),
             size: self.size, color: self.color,
             max_width: Some(rect.width),
-            single_line: false,
+            single_line: self.single_line,
         });
     }
 }
@@ -580,6 +600,41 @@ impl Widget for TextInput {
 
 pub(crate) fn text_input_style(width: f32, font_size: f32) -> Style {
     Style { width: Size::Px(width), height: Size::Px(font_size * 2.4), ..Default::default() }
+}
+
+// ── ClickAbsorber ──────────────────────────────────────────────────────────
+
+pub struct ClickAbsorber {
+    pub(crate) node: NodeId,
+    pub(crate) child: Option<Box<dyn Widget>>,
+    pub(crate) on_click: Box<dyn FnMut()>,
+}
+
+impl Widget for ClickAbsorber {
+    fn node_id(&self) -> NodeId { self.node }
+    
+    fn children(&self) -> &[Box<dyn Widget>] {
+        match &self.child {
+            Some(c) => std::slice::from_ref(c),
+            None => &[],
+        }
+    }
+    
+    fn children_mut(&mut self) -> &mut [Box<dyn Widget>] {
+        match &mut self.child {
+            Some(c) => std::slice::from_mut(c),
+            None => &mut [],
+        }
+    }
+    
+    fn update(&mut self, tree: &mut LayoutTree) {
+        if let Some(c) = &mut self.child { c.update(tree); }
+    }
+    
+    fn on_click(&mut self) -> bool {
+        (self.on_click)();
+        true
+    }
 }
 
 // ── Spacer ───────────────────────────────────────────────────────────────────

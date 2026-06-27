@@ -27,6 +27,7 @@ fn app() -> impl View {
         // 2. Modals
         row([
             button("Open Modal", move || {
+                println!("Open Modal clicked!");
                 show_modal.set(true);
             }),
         ]).margin(20.0),
@@ -101,7 +102,7 @@ fn app() -> impl View {
                 .background(Color::WHITE)
                 .corner_radius(12.0)
                 .width(400.0)
-                .height(200.0)
+                .height(300.0)
             }
         )
     ])

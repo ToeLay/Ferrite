@@ -64,6 +64,44 @@ trait ViewDescriptor {
     fn set_corner_radius(&mut self, _r: f32) {
         debug_assert!(false, "This widget does not support setting corner radius");
     }
+    fn set_single_line(&mut self, _b: bool) {
+        debug_assert!(false, "This widget does not support setting single_line");
+    }
+    fn set_clip(&mut self) {
+        debug_assert!(false, "This widget does not support setting clip");
+    }
+}
+
+// ── Views ────────────────────────────────────────────────────────────────────
+
+pub fn click_absorber(on_click: impl FnMut() + 'static, child: AnyView) -> AnyView {
+    AnyView { inner: Box::new(ClickAbsorberDescriptor {
+        child: child.inner,
+        on_click: Box::new(on_click),
+        overrides: StyleOverrides::default(),
+    }) }
+}
+
+struct ClickAbsorberDescriptor {
+    child: Box<dyn ViewDescriptor>,
+    on_click: Box<dyn FnMut()>,
+    overrides: StyleOverrides,
+}
+
+impl ViewDescriptor for ClickAbsorberDescriptor {
+    fn build(self: Box<Self>, tree: &mut ferrite_layout::LayoutTree) -> Box<dyn crate::Widget> {
+        let ClickAbsorberDescriptor { child, on_click, overrides } = *self;
+        let built_child = child.build(tree);
+        let mut style = ferrite_layout::Style::default();
+        overrides.apply_to(&mut style);
+        let node = tree.new_with_children(style, &[built_child.node_id()]);
+        Box::new(crate::widgets::ClickAbsorber {
+            node,
+            child: Some(built_child),
+            on_click,
+        })
+    }
+    fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
 }
 
 // ── AnyView ──────────────────────────────────────────────────────────────────
@@ -164,6 +202,16 @@ impl AnyView {
         self.inner.set_corner_radius(r);
         self
     }
+    
+    pub fn single_line(mut self) -> Self {
+        self.inner.set_single_line(true);
+        self
+    }
+    
+    pub fn clip(mut self) -> Self {
+        self.inner.set_clip();
+        self
+    }
 
     // Dynamic modifier
     pub fn visible_when(self, signal: impl Fn() -> bool + 'static) -> Self {
@@ -199,6 +247,16 @@ impl AnyView {
     pub fn on_press(self, callback: impl FnMut(bool) + 'static) -> Self {
         AnyView {
             inner: Box::new(TrackPressDescriptor {
+                inner: self,
+                callback: Box::new(callback),
+                overrides: StyleOverrides::default(),
+            }),
+        }
+    }
+
+    pub fn on_click(self, callback: impl FnMut() + 'static) -> Self {
+        AnyView {
+            inner: Box::new(TrackClickDescriptor {
                 inner: self,
                 callback: Box::new(callback),
                 overrides: StyleOverrides::default(),
@@ -481,6 +539,44 @@ impl ViewDescriptor for TrackPressDescriptor {
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
 }
 
+// ── TrackClickDescriptor ───────────────────────────────────────────────────────
+
+struct TrackClickDescriptor {
+    inner: AnyView,
+    callback: Box<dyn FnMut()>,
+    overrides: StyleOverrides,
+}
+
+struct TrackClickWidget {
+    node: ferrite_layout::NodeId,
+    child: Box<dyn crate::Widget>,
+    callback: Box<dyn FnMut()>,
+}
+
+impl crate::Widget for TrackClickWidget {
+    fn node_id(&self) -> ferrite_layout::NodeId { self.node }
+    fn children(&self) -> &[Box<dyn crate::Widget>] { std::slice::from_ref(&self.child) }
+    fn children_mut(&mut self) -> &mut [Box<dyn crate::Widget>] { std::slice::from_mut(&mut self.child) }
+    fn on_click(&mut self) -> bool { (self.callback)(); true }
+    fn update(&mut self, tree: &mut ferrite_layout::LayoutTree) { self.child.update(tree); }
+    fn paint(&self, tree: &ferrite_layout::LayoutTree, ox: f32, oy: f32, out: &mut Vec<crate::DrawCommand>) {
+        let r = tree.layout(self.node);
+        self.child.paint(tree, ox + r.x, oy + r.y, out);
+    }
+}
+
+impl ViewDescriptor for TrackClickDescriptor {
+    fn build(self: Box<Self>, tree: &mut ferrite_layout::LayoutTree) -> Box<dyn crate::Widget> {
+        let TrackClickDescriptor { inner, callback, overrides } = *self;
+        let child = inner.build(tree);
+        let mut style = ferrite_layout::Style::default();
+        overrides.apply_to(&mut style);
+        let node = tree.new_with_children(style, &[child.node_id()]);
+        Box::new(TrackClickWidget { node, child, callback })
+    }
+    fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
+}
+
 // ── Anchor ───────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Default)]
@@ -536,26 +632,29 @@ struct TextDescriptor {
     content: String,
     font_size: f32,
     color: Color,
+    single_line: bool,
     overrides: StyleOverrides,
 }
 
 impl ViewDescriptor for TextDescriptor {
     fn build(self: Box<Self>, tree: &mut LayoutTree) -> Box<dyn Widget> {
-        let TextDescriptor { content, font_size, color, overrides } = *self;
+        let TextDescriptor { content, font_size, color, single_line, overrides } = *self;
         let mut style = Style::default();
         overrides.apply_to(&mut style);
         let content_rc = Rc::new(RefCell::new(content));
-        let node = tree.new_text_leaf(style, content_rc.clone(), font_size);
+        let node = tree.new_text_leaf(style, content_rc.clone(), font_size, single_line);
         Box::new(Text {
             node,
             content: content_rc,
             color,
             size: font_size,
+            single_line,
         })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
     fn set_font_size(&mut self, s: f32) { self.font_size = s; }
     fn set_text_color(&mut self, c: Color) { self.color = c; }
+    fn set_single_line(&mut self, b: bool) { self.single_line = b; }
 }
 
 pub fn text(content: &str) -> AnyView {
@@ -565,6 +664,7 @@ pub fn text(content: &str) -> AnyView {
             content: content.to_string(),
             font_size: widgets::DEFAULT_TEXT_SIZE,
             color: theme.on_surface,
+            single_line: false,
             overrides: StyleOverrides::default(),
         }),
     }
@@ -576,6 +676,7 @@ struct LabelDescriptor {
     compute: Box<dyn Fn() -> String>,
     font_size: f32,
     color: Color,
+    single_line: bool,
     overrides: StyleOverrides,
 }
 
@@ -583,24 +684,25 @@ impl ViewDescriptor for LabelDescriptor {
     fn build(self: Box<Self>, tree: &mut LayoutTree) -> Box<dyn Widget> {
         let scope = ferrite_reactive::Scope::new();
         let widget = scope.run(|| {
-            let LabelDescriptor { compute, font_size, color, overrides } = *self;
+            let LabelDescriptor { compute, font_size, color, single_line, overrides } = *self;
             let initial = compute();
             let mut style = Style::default();
             overrides.apply_to(&mut style);
             let content = Rc::new(RefCell::new(initial));
-            let node = tree.new_text_leaf(style, content.clone(), font_size);
+            let node = tree.new_text_leaf(style, content.clone(), font_size, single_line);
             let c2 = content.clone();
             create_effect(move || { 
                 *c2.borrow_mut() = compute(); 
                 crate::dirty::request_layout(node); 
             });
-            Box::new(Text { node, content, color, size: font_size }) as Box<dyn Widget>
+            Box::new(Text { node, content, color, size: font_size, single_line }) as Box<dyn Widget>
         });
         Box::new(ScopedWidget { inner: widget, scope: Some(scope) })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
     fn set_font_size(&mut self, s: f32) { self.font_size = s; }
     fn set_text_color(&mut self, c: Color) { self.color = c; }
+    fn set_single_line(&mut self, b: bool) { self.single_line = b; }
 }
 
 pub fn label(f: impl Fn() -> String + 'static) -> AnyView {
@@ -610,6 +712,7 @@ pub fn label(f: impl Fn() -> String + 'static) -> AnyView {
             compute: Box::new(f),
             font_size: widgets::DEFAULT_TEXT_SIZE,
             color: theme.on_surface,
+            single_line: false,
             overrides: StyleOverrides::default(),
         }),
     }
@@ -774,12 +877,13 @@ struct ContainerDescriptor {
     children: Vec<AnyView>,
     bg: Option<Color>,
     radius: f32,
+    clip: bool,
     overrides: StyleOverrides,
 }
 
 impl ViewDescriptor for ContainerDescriptor {
     fn build(self: Box<Self>, tree: &mut LayoutTree) -> Box<dyn Widget> {
-        let ContainerDescriptor { direction, children, bg, radius, overrides } = *self;
+        let ContainerDescriptor { direction, children, bg, radius, clip, overrides } = *self;
         let built: Vec<Box<dyn Widget>> = children.into_iter().map(|c| c.build(tree)).collect();
         let mut style = Style { direction, ..Default::default() };
         overrides.apply_to(&mut style);
@@ -790,13 +894,15 @@ impl ViewDescriptor for ContainerDescriptor {
             node, 
             children: built, 
             background: bg,
-            corner_radius: radius 
+            corner_radius: radius,
+            clip,
         };
         Box::new(c)
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
     fn set_background(&mut self, c: Color) { self.bg = Some(c); }
     fn set_corner_radius(&mut self, r: f32) { self.radius = r; }
+    fn set_clip(&mut self) { self.clip = true; }
 }
 
 pub fn col(children: impl IntoIterator<Item = AnyView>) -> AnyView {
@@ -806,6 +912,7 @@ pub fn col(children: impl IntoIterator<Item = AnyView>) -> AnyView {
             children: children.into_iter().collect(),
             bg: None,
             radius: 0.0,
+            clip: true,
             overrides: StyleOverrides::default(),
         }),
     }
@@ -818,6 +925,7 @@ pub fn row(children: impl IntoIterator<Item = AnyView>) -> AnyView {
             children: children.into_iter().collect(),
             bg: None,
             radius: 0.0,
+            clip: true,
             overrides: StyleOverrides::default(),
         }),
     }
@@ -1293,21 +1401,27 @@ pub fn dropdown(
         
         let mut children = Vec::new();
         for (i, item) in items_clone.iter().enumerate() {
+            if i > 0 {
+                children.push(divider());
+            }
             let mut select_cb = on_select_clone.clone();
             let show_cb = show_dropdown.clone();
             let item_clone = item.clone();
             
-            // Dropdown items now use standard button with single_line truncation enforced by the renderer
-            let text = item.clone();
-            
             children.push(
-                button(&text, move || {
+                row([
+                    text(&item)
+                        .single_line()
+                        .color(crate::Color::BLACK)
+                        .width(width - 16.0)
+                ])
+                .align(AlignItems::Center)
+                .padding(8.0)
+                .width(width)
+                .on_click(move || {
                     select_cb(i, item_clone.clone());
                     show_cb.set(false);
                 })
-                .background(crate::Color::WHITE)
-                .foreground(crate::Color::rgb(0.0, 0.0, 0.0))
-                .width(width)
             );
         }
         

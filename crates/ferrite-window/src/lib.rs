@@ -84,6 +84,7 @@ impl ApplicationHandler for Runner {
             WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
                 let now = std::time::Instant::now();
                 let mut current_click_count = 1;
+                
                 if let (Some(last_time), Some(last_pos)) = (self.last_click_time, self.last_click_pos) {
                     if now.duration_since(last_time).as_millis() < 300 {
                         let dx = self.cursor_pos.0 - last_pos.0;
@@ -111,11 +112,13 @@ impl ApplicationHandler for Runner {
                     self.last_click_time = Some(now);
                     self.last_click_pos = Some(self.cursor_pos);
                 }
+                ferrite_core::request_repaint();
             }
-
+            
             WindowEvent::MouseInput { state: ElementState::Released, button: MouseButton::Left, .. } => {
                 self.drag_active = false;
                 self.app.release_drag();
+                ferrite_core::request_repaint();
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
@@ -124,19 +127,22 @@ impl ApplicationHandler for Runner {
                     MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
                 };
                 self.app.scroll(self.cursor_pos.0 as f32, self.cursor_pos.1 as f32, dx, dy);
+                ferrite_core::request_repaint();
             }
 
-            WindowEvent::KeyboardInput { event: key_event, .. } => {
-                if key_event.state != ElementState::Pressed { return; }
-                if let Some(fe) = map_key(&key_event.logical_key, self.modifiers) {
-                    if fe.key == KeyCode::Tab {
-                        if fe.modifiers.shift {
-                            self.app.focus_prev();
+            WindowEvent::KeyboardInput { event, .. } => {
+                if event.state == ElementState::Pressed {
+                    if let Some(fe) = map_key(&event.logical_key, self.modifiers) {
+                        if fe.key == KeyCode::Tab {
+                            if fe.modifiers.shift {
+                                self.app.focus_prev();
+                            } else {
+                                self.app.focus_next();
+                            }
                         } else {
-                            self.app.focus_next();
+                            self.app.key_event(fe);
                         }
-                    } else {
-                        self.app.key_event(fe);
+                        ferrite_core::request_repaint();
                     }
                 }
             }

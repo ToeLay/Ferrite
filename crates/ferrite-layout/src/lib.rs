@@ -255,7 +255,7 @@ pub struct Rect {
 pub struct NodeId(taffy::NodeId);
 
 pub enum NodeKind {
-    Text { content: Rc<RefCell<String>>, font_size: f32 },
+    Text { content: Rc<RefCell<String>>, font_size: f32, single_line: bool },
     Other,
 }
 /// Owns the flexbox tree and the cached result of the last `compute` call.
@@ -314,8 +314,8 @@ impl LayoutTree {
         NodeId(self.inner.new_leaf_with_context(to_taffy_style(&style), NodeKind::Other).expect("ferrite-layout: arena allocation failed"))
     }
 
-    pub fn new_text_leaf(&mut self, style: Style, content: Rc<RefCell<String>>, font_size: f32) -> NodeId {
-        NodeId(self.inner.new_leaf_with_context(to_taffy_style(&style), NodeKind::Text { content, font_size }).expect("ferrite-layout: arena allocation failed"))
+    pub fn new_text_leaf(&mut self, style: Style, content: Rc<RefCell<String>>, font_size: f32, single_line: bool) -> NodeId {
+        NodeId(self.inner.new_leaf_with_context(to_taffy_style(&style), NodeKind::Text { content, font_size, single_line }).expect("ferrite-layout: arena allocation failed"))
     }
 
     pub fn new_with_children(&mut self, style: Style, children: &[NodeId]) -> NodeId {
@@ -366,9 +366,12 @@ impl LayoutTree {
             let measure_fn = measure.as_ref();
             self.inner.compute_layout_with_measure(root.0, size, |known, available, _, ctx, _| {
                 match ctx {
-                    Some(NodeKind::Text { content, font_size }) => {
-                        let max_w = known.width.or(available.width.into_option());
-                        let (w, h) = measure_fn(&content.borrow(), *font_size, max_w);
+                    Some(NodeKind::Text { content, font_size, single_line }) => {
+                        let max_w = if *single_line { None } else { known.width.or(available.width.into_option()) };
+                        let (w, mut h) = measure_fn(&content.borrow(), *font_size, max_w);
+                        if *single_line {
+                            h = *font_size * 1.2;
+                        }
                         taffy::Size { width: w, height: h }
                     }
                     _ => taffy::Size { width: 0.0, height: 0.0 },
