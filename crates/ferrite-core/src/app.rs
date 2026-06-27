@@ -37,6 +37,9 @@ impl App {
     pub fn root_node_id(&self) -> NodeId { self.root.node_id() }
     pub fn root(&self) -> &dyn Widget { self.root.as_ref() }
 
+    pub fn set_text_measure(&mut self, f: impl Fn(&str, f32, Option<f32>) -> (f32, f32) + 'static) {
+        self.tree.set_text_measure(f);
+    }
     pub fn set_hover_pos(&mut self, pos: Option<(f32, f32)>) {
         self.hover_pos = pos;
         
@@ -224,6 +227,7 @@ impl App {
                     color: crate::Color::rgb(1.0, 1.0, 1.0),
                     max_width: None,
                     single_line: true,
+                    center: false,
                 });
             } else {
                 // Keep ticking until tooltip shows

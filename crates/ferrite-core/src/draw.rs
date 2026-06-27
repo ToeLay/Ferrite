@@ -16,6 +16,7 @@ pub enum DrawCommand {
         color: crate::Color,
         max_width: Option<f32>,
         single_line: bool,
+        center: bool,
     },
     PushClip { rect: Rect },
     PopClip,

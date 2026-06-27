@@ -78,7 +78,7 @@ pub fn wrap_text(text: &str, size: f32, max_width: Option<f32>, f: &fontdue::Fon
                 let whitespace_width: f32 = whitespace.chars().map(advance_width).sum();
                 let word_width = trimmed_width + whitespace_width;
 
-                if current_width + trimmed_width <= max_w {
+                if current_width + trimmed_width <= max_w + 1.0 {
                     current_line.push_str(word);
                     current_width += word_width;
                 } else {
@@ -89,13 +89,13 @@ pub fn wrap_text(text: &str, size: f32, max_width: Option<f32>, f: &fontdue::Fon
                         current_width = 0.0;
                     }
                     
-                    if trimmed_width <= max_w {
+                    if trimmed_width <= max_w + 1.0 {
                         current_line.push_str(word);
                         current_width += word_width;
                     } else {
                         for ch in word.chars() {
                             let ch_w = if ch == '\n' || ch == '\r' { 0.0 } else { f.metrics(ch, size).advance_width };
-                            if current_width + ch_w > max_w && current_width > 0.0 {
+                            if current_width + ch_w > max_w + 1.0 && current_width > 0.0 {
                                 max_line_width = max_line_width.max(current_width);
                                 lines.push(TextLine { text: current_line, width: current_width });
                                 current_line = String::new();
@@ -143,7 +143,7 @@ pub fn text_wrap_lines_fn() -> impl Fn(&str, f32, f32) -> Vec<usize> {
 
 /// Rasterize a full draw command list into a new pixmap of the given size
 /// (physical pixels), filled with `background` first.
-pub fn render_to_pixmap(commands: &[DrawCommand], width: u32, height: u32, background: FColor) -> Pixmap {
+pub fn render_to_pixmap(commands: &[DrawCommand], width: u32, height: u32, scale: f32, background: FColor) -> Pixmap {
     let mut pixmap = Pixmap::new(width.max(1), height.max(1)).expect("non-zero pixmap size");
     pixmap.fill(to_skia_color(background));
     
@@ -155,10 +155,11 @@ pub fn render_to_pixmap(commands: &[DrawCommand], width: u32, height: u32, backg
     for cmd in commands {
         match cmd {
             DrawCommand::PushClip { rect } => {
+                let rect = FRect { x: rect.x * scale, y: rect.y * scale, width: rect.width * scale, height: rect.height * scale };
                 let new_clip = if let Some(prev) = active_clip {
-                    intersect_rect(prev, *rect).unwrap_or(FRect { x: 0.0, y: 0.0, width: 0.0, height: 0.0 })
+                    intersect_rect(prev, rect).unwrap_or(FRect { x: 0.0, y: 0.0, width: 0.0, height: 0.0 })
                 } else {
-                    *rect
+                    rect
                 };
                 clip_stack.push(new_clip);
                 active_clip = Some(new_clip);
@@ -176,34 +177,40 @@ pub fn render_to_pixmap(commands: &[DrawCommand], width: u32, height: u32, backg
                 }
             }
             DrawCommand::Rect { rect, color, corner_radius } => {
-                let mut draw_r = *rect;
+                let rect = FRect { x: rect.x * scale, y: rect.y * scale, width: rect.width * scale, height: rect.height * scale };
+                let corner_radius = *corner_radius * scale;
+                let mut draw_r = rect;
                 if let Some(c) = active_clip {
                     if rect.x > c.x + c.width || rect.y > c.y + c.height || rect.x + rect.width < c.x || rect.y + rect.height < c.y {
                         continue;
                     }
-                    if *corner_radius <= 0.0 {
-                        if let Some(intersected) = intersect_rect(*rect, c) {
+                    if corner_radius <= 0.0 {
+                        if let Some(intersected) = intersect_rect(rect, c) {
                             draw_r = intersected;
                         }
                     }
                 }
-                let mask = if mask_active && *corner_radius > 0.0 { Some(&clip_mask) } else { None };
-                draw_rect(&mut pixmap, draw_r, *color, *corner_radius, mask)
+                let mask = if mask_active && corner_radius > 0.0 { Some(&clip_mask) } else { None };
+                draw_rect(&mut pixmap, draw_r, *color, corner_radius, mask)
             }
-            DrawCommand::Text { x, y, content, size, color, max_width, single_line } => {
+            DrawCommand::Text { x, y, content, size, color, max_width, single_line, center } => {
+                let mut x = *x * scale;
+                let y = *y * scale;
+                let size = *size * scale;
+                let max_width = max_width.map(|w| w * scale);
                 let f = font();
                 if *single_line {
                     let mut text_to_draw = content.clone();
+                    let current_width: f32 = text_to_draw.chars().map(|c| f.metrics(c, size).advance_width).sum();
                     if let Some(max_w) = max_width {
-                        let mut current_width: f32 = text_to_draw.chars().map(|c| f.metrics(c, *size).advance_width).sum();
-                        if current_width > *max_w {
+                        if current_width > max_w + 1.0 {
                             // Truncate and add ...
-                            let dot_w = f.metrics('.', *size).advance_width * 3.0;
+                            let dot_w = f.metrics('.', size).advance_width * 3.0;
                             let mut new_text = String::new();
                             let mut w = 0.0;
                             for c in text_to_draw.chars() {
-                                let cw = f.metrics(c, *size).advance_width;
-                                if w + cw + dot_w > *max_w {
+                                let cw = f.metrics(c, size).advance_width;
+                                if w + cw + dot_w > max_w {
                                     break;
                                 }
                                 w += cw;
@@ -211,22 +218,24 @@ pub fn render_to_pixmap(commands: &[DrawCommand], width: u32, height: u32, backg
                             }
                             new_text.push_str("...");
                             text_to_draw = new_text;
+                        } else if *center {
+                            x += (max_w - current_width) / 2.0;
                         }
                     }
-                    draw_text(&mut pixmap, *x, *y, &text_to_draw, *size, *color, active_clip);
+                    draw_text(&mut pixmap, x, y, &text_to_draw, size, *color, active_clip);
                 } else {
-                    let (_, _, lines) = wrap_text(content, *size, *max_width, f);
-                    let line_height = f.horizontal_line_metrics(*size).map(|m| m.new_line_size).unwrap_or(*size * 1.4);
+                    let (_, _, lines) = wrap_text(content, size, max_width, f);
+                    let line_height = f.horizontal_line_metrics(size).map(|m| m.new_line_size).unwrap_or(size * 1.4);
                     
-                    let mut current_y = *y;
+                    let mut current_y = y;
                     for line in lines {
                         if let Some(c) = active_clip {
-                            if *x > c.x + c.width || current_y > c.y + c.height || *x + line.width < c.x || current_y + line_height < c.y {
+                            if x > c.x + c.width || current_y > c.y + c.height || x + line.width < c.x || current_y + line_height < c.y {
                                 current_y += line_height;
                                 continue;
                             }
                         }
-                        draw_text(&mut pixmap, *x, current_y, &line.text, *size, *color, active_clip);
+                        draw_text(&mut pixmap, x, current_y, &line.text, size, *color, active_clip);
                         current_y += line_height;
                     }
                 }

@@ -733,14 +733,19 @@ impl ViewDescriptor for ButtonDescriptor {
         let scope = ferrite_reactive::Scope::new();
         let widget = scope.run(|| {
             let ButtonDescriptor { label, on_click, background, foreground, overrides } = *self;
-            let char_w = label.chars().count() as f32 * 18.0 * 0.62;
             let mut style = Style {
-                width: Size::Px((char_w + 36.0).max(56.0)),
-                height: Size::Px(42.0),
+                padding: ferrite_layout::Edges {
+                    left: 22.0, // 18px visual padding + 4px focus inset
+                    right: 22.0,
+                    top: 0.0,
+                    bottom: 0.0,
+                },
+                height: Size::Px(50.0),
                 ..Default::default()
             };
             overrides.apply_to(&mut style);
-            let node = tree.new_leaf(style);
+            let content = std::rc::Rc::new(std::cell::RefCell::new(label.clone()));
+            let node = tree.new_text_leaf(style, content, 18.0, true);
             let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
             
             let hovered = ferrite_reactive::create_signal(false);
@@ -757,7 +762,7 @@ impl ViewDescriptor for ButtonDescriptor {
             
             Box::new(widgets::Button { 
                 node, label, on_click, background, foreground, theme, focused: false,
-                hovered, pressed, anim
+                hovered, pressed, anim, font_size: 18.0
             }) as Box<dyn Widget>
         });
         Box::new(ScopedWidget { inner: widget, scope: Some(scope) })
@@ -1203,6 +1208,13 @@ pub fn portal(show: ferrite_reactive::Signal<bool>, content: impl Fn() -> AnyVie
             };
             self.overrides.apply_to(&mut style);
             let node = tree.new_leaf(style);
+            
+            let show_sig = self.show.clone();
+            ferrite_reactive::create_effect(move || {
+                show_sig.track();
+                crate::dirty::request_repaint();
+            });
+            
             let widget = crate::widgets::PortalWidget {
                 node,
                 show: self.show,

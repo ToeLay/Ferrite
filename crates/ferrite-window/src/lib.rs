@@ -73,8 +73,11 @@ impl ApplicationHandler for Runner {
             }
 
             WindowEvent::CursorMoved { position, .. } => {
-                self.cursor_pos = (position.x, position.y);
-                self.app.set_hover_pos(Some((position.x as f32, position.y as f32)));
+                let scale = self.window.as_ref().map(|w| w.scale_factor()).unwrap_or(1.0);
+                let logical_x = position.x / scale;
+                let logical_y = position.y / scale;
+                self.cursor_pos = (logical_x, logical_y);
+                self.app.set_hover_pos(Some((logical_x as f32, logical_y as f32)));
                 ferrite_core::request_repaint(); // Start hover detection
                 if self.drag_active {
                     self.app.drag(self.cursor_pos.0 as f32, self.cursor_pos.1 as f32);
@@ -124,7 +127,10 @@ impl ApplicationHandler for Runner {
             WindowEvent::MouseWheel { delta, .. } => {
                 let (dx, dy) = match delta {
                     MouseScrollDelta::LineDelta(x, y) => (x * 20.0, y * 20.0),
-                    MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
+                    MouseScrollDelta::PixelDelta(pos) => {
+                        let scale = self.window.as_ref().map(|w| w.scale_factor()).unwrap_or(1.0);
+                        (pos.x as f32 / scale as f32, pos.y as f32 / scale as f32)
+                    },
                 };
                 self.app.scroll(self.cursor_pos.0 as f32, self.cursor_pos.1 as f32, dx, dy);
                 ferrite_core::request_repaint();
@@ -167,9 +173,14 @@ impl Runner {
         let Some(window) = self.window.clone() else { return };
         let size = window.inner_size();
         let (w, h) = (size.width.max(1), size.height.max(1));
-        let commands = self.app.render(w as f32, h as f32);
         
-        let pixmap = ferrite_render_skia::render_to_pixmap(&commands, w, h, self.config.background);
+        let scale = window.scale_factor() as f32;
+        let logical_w = w as f32 / scale;
+        let logical_h = h as f32 / scale;
+        
+        let commands = self.app.render(logical_w, logical_h);
+        
+        let pixmap = ferrite_render_skia::render_to_pixmap(&commands, w, h, scale, self.config.background);
         
         let Some(surface) = &mut self.surface else { return };
         let Ok(mut buffer) = surface.buffer_mut() else { return };
@@ -212,8 +223,9 @@ fn map_key(key: &Key, mods: winit::keyboard::ModifiersState) -> Option<KeyEvent>
     Some(KeyEvent { key: code, modifiers })
 }
 
-pub fn run(config: WindowConfig, app: App) {
+pub fn run(config: WindowConfig, mut app: App) {
     clipboard::init_clipboard();
+    app.set_text_measure(ferrite_render_skia::text_measure_fn());
     let event_loop = EventLoop::new().expect("create event loop");
     event_loop.set_control_flow(ControlFlow::Wait);
     let context = Context::new(event_loop.owned_display_handle()).expect("create softbuffer context");

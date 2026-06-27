@@ -27,7 +27,6 @@ fn app() -> impl View {
         // 2. Modals
         row([
             button("Open Modal", move || {
-                println!("Open Modal clicked!");
                 show_modal.set(true);
             }),
         ]).margin(20.0),
@@ -56,7 +55,7 @@ fn app() -> impl View {
             }),
             button("Show Another Toast", || {
                 ferrite::toast("You clicked another toast button!");
-            }).margin(10.0),
+            }),
         ]).margin(20.0),
 
         // 5. Iterator View Composition

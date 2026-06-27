@@ -78,6 +78,7 @@ impl Widget for Text {
             size: self.size, color: self.color,
             max_width: Some(rect.width),
             single_line: self.single_line,
+            center: false,
         });
     }
 }
@@ -97,6 +98,7 @@ pub struct Button {
     pub(crate) hovered: ferrite_reactive::Signal<bool>,
     pub(crate) pressed: ferrite_reactive::Signal<bool>,
     pub(crate) anim: ferrite_reactive::Signal<f32>,
+    pub(crate) font_size: f32,
 }
 impl Button {
     pub fn background(mut self, c: Color) -> Self { self.background = c; self }
@@ -125,12 +127,12 @@ impl Widget for Button {
             // Draw a 2px focus ring with a 2px gap around the button
             // 1. Outer ring (primary color)
             out.push(DrawCommand::Rect {
-                rect: Rect { x: rect.x - 4.0, y: rect.y - 4.0, width: rect.width + 8.0, height: rect.height + 8.0 },
+                rect,
                 color: self.theme.primary, corner_radius: 14.0,
             });
             // 2. Inner gap (surface color to mask out the gap)
             out.push(DrawCommand::Rect {
-                rect: Rect { x: rect.x - 2.0, y: rect.y - 2.0, width: rect.width + 4.0, height: rect.height + 4.0 },
+                rect: Rect { x: rect.x + 2.0, y: rect.y + 2.0, width: rect.width - 4.0, height: rect.height - 4.0 },
                 color: self.theme.surface, corner_radius: 12.0,
             });
         }
@@ -145,12 +147,16 @@ impl Widget for Button {
             self.background.lerp(&self.background.lighten(0.1), state)
         };
         
-        out.push(DrawCommand::Rect { rect, color: bg, corner_radius: 10.0 });
+        // Inset button background to leave room for the focus ring (4px all sides)
+        let bg_rect = Rect { x: rect.x + 4.0, y: rect.y + 4.0, width: rect.width - 8.0, height: rect.height - 8.0 };
+        
+        out.push(DrawCommand::Rect { rect: bg_rect, color: bg, corner_radius: 10.0 });
         out.push(DrawCommand::Text {
-            x: rect.x + 18.0, y: rect.y + rect.height / 2.0 - 9.0,
-            content: self.label.clone(), size: 18.0, color: self.foreground,
-            max_width: Some(rect.width - 36.0),
+            x: bg_rect.x, y: bg_rect.y + bg_rect.height / 2.0 - self.font_size / 2.0,
+            content: self.label.clone(), size: self.font_size, color: self.foreground,
+            max_width: Some(bg_rect.width),
             single_line: true,
+            center: true,
         });
     }
     fn on_click(&mut self) -> bool { (self.on_click)(); true }
@@ -278,7 +284,7 @@ impl TextInput {
         }
     }
     fn ensure_cursor_visible(&mut self, width: f32, total_text_width: f32) {
-        let pad = 10.0;
+        let pad = self.font_size * 0.5;
         let inner_w = width - 2.0 * pad;
         let cx = self.cursor_px;
         
@@ -307,8 +313,8 @@ impl Widget for TextInput {
         let ax = ox + r.x;
         let ay = oy + r.y;
         if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return None; }
-        
-        let rel_x = px - (ax + 10.0) + self.scroll_x;
+        let pad = self.font_size * 0.5;
+        let rel_x = px - (ax + pad) + self.scroll_x;
         let val = self.value.get();
         let mut found_idx = val.chars().count();
         let mut current_px = 0.0;
@@ -340,8 +346,8 @@ impl Widget for TextInput {
         if self.selection_start.is_none() {
             self.selection_start = Some(self.cursor);
         }
-        
-        let rel_x = px - (ax + 10.0) + self.scroll_x;
+        let pad = self.font_size * 0.5;
+        let rel_x = px - (ax + pad) + self.scroll_x;
         let val = self.value.get();
         let mut found_idx = val.chars().count();
         
@@ -549,7 +555,7 @@ impl Widget for TextInput {
 
     fn paint_self(&self, rect: Rect, out: &mut Vec<DrawCommand>) {
         let border_color = if self.focused { self.theme.primary } else { self.theme.muted };
-        let pad = 10.0_f32;
+        let pad = self.font_size * 0.5;
         out.push(DrawCommand::Rect { rect, color: border_color, corner_radius: self.theme.radius_md - 1.0 });
         let inner = Rect { x: rect.x + 1.5, y: rect.y + 1.5, width: rect.width - 3.0, height: rect.height - 3.0 };
         out.push(DrawCommand::Rect { rect: inner, color: self.theme.surface, corner_radius: self.theme.radius_md - 2.0 });
@@ -561,10 +567,10 @@ impl Widget for TextInput {
         
         if val.is_empty() {
             out.push(DrawCommand::Text { x: base_x, y: text_y, content: self.placeholder.clone(),
-                size: self.font_size, color: self.theme.muted, max_width: None, single_line: true });
+                size: self.font_size, color: self.theme.muted, max_width: None, single_line: true, center: false });
         } else {
             out.push(DrawCommand::Text { x: base_x, y: text_y, content: val,
-                size: self.font_size, color: self.theme.on_surface, max_width: None, single_line: true });
+                size: self.font_size, color: self.theme.on_surface, max_width: None, single_line: true, center: false });
         }
         if self.focused {
             // Draw selection box
@@ -734,6 +740,7 @@ impl Widget for Checkbox {
                 size: self.font_size, color: self.theme.on_surface,
                 max_width: Some(rect.width - box_size - self.theme.spacing),
                 single_line: false,
+                center: false,
             });
         }
     }
@@ -1069,7 +1076,7 @@ impl TextArea {
     }
     
     fn ensure_cursor_visible(&mut self, width: f32, height: f32, total_w: f32, total_h: f32) {
-        let pad = 10.0;
+        let pad = self.font_size * 0.5;
         let inner_w = width - 2.0 * pad;
         let inner_h = height - 2.0 * pad;
         let cx = self.cursor_px;
@@ -1108,7 +1115,7 @@ impl Widget for TextArea {
         let ay = oy + r.y;
         if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return None; }
         
-        let pad = 10.0;
+        let pad = self.font_size * 0.5;
         let rel_y = py - (ay + pad) + self.scroll_y;
         let rel_x = px - (ax + pad) + self.scroll_x;
         
@@ -1165,7 +1172,7 @@ impl Widget for TextArea {
             self.selection_start = Some(self.cursor);
         }
         
-        let pad = 10.0;
+        let pad = self.font_size * 0.5;
         let rel_y = py - (ay + pad) + self.scroll_y;
         let rel_x = px - (ax + pad) + self.scroll_x;
         
@@ -1238,7 +1245,7 @@ impl Widget for TextArea {
             }
         }
         
-        let pad = 10.0;
+        let pad = self.font_size * 0.5;
         let inner_w = r.width - 2.0 * pad;
         
         let (_, lh) = tree.measure_text("A", self.font_size, None);
@@ -1473,7 +1480,7 @@ impl Widget for TextArea {
 
     fn paint_self(&self, rect: Rect, out: &mut Vec<DrawCommand>) {
         let border_color = if self.focused { self.theme.primary } else { self.theme.muted };
-        let pad = 10.0_f32;
+        let pad = self.font_size * 0.5;
         out.push(DrawCommand::Rect { rect, color: border_color, corner_radius: self.theme.radius_md - 1.0 });
         let inner = Rect { x: rect.x + 1.5, y: rect.y + 1.5, width: rect.width - 3.0, height: rect.height - 3.0 };
         out.push(DrawCommand::Rect { rect: inner, color: self.theme.surface, corner_radius: self.theme.radius_md - 2.0 });
@@ -1485,10 +1492,10 @@ impl Widget for TextArea {
         
         if val.is_empty() {
             out.push(DrawCommand::Text { x: base_x, y: text_y, content: self.placeholder.clone(),
-                size: self.font_size, color: self.theme.muted, max_width: Some(rect.width - 2.0 * pad), single_line: false });
+                size: self.font_size, color: self.theme.muted, max_width: Some(rect.width - 2.0 * pad), single_line: false, center: false });
         } else {
             out.push(DrawCommand::Text { x: base_x, y: text_y, content: val,
-                size: self.font_size, color: self.theme.on_surface, max_width: Some(rect.width - 2.0 * pad), single_line: false });
+                size: self.font_size, color: self.theme.on_surface, max_width: Some(rect.width - 2.0 * pad), single_line: false, center: false });
         }
         
         
