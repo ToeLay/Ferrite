@@ -11,3 +11,4 @@ path = "src/main.rs"
 
 [dependencies]
 ferrite = { path = "../../crates/ferrite" }
+ferrite-core = { path = "../../crates/ferrite-core" }

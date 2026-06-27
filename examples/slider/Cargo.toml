@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 ferrite = { path = "../../crates/ferrite" }
+ferrite-core = { path = "../../crates/ferrite-core" }

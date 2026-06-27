@@ -1072,6 +1072,148 @@ pub fn dropdown(
     ])
 }
 
+// ── card ────────────────────────────────────────────────────────────────────
+
+/// Groups content on a raised surface with a subtle 1-px border and rounded
+/// corners. Uses `theme.surface` + `theme.border` automatically — you only
+/// pass children.
+///
+/// ```no_run
+/// card([
+///     text("Title").size(18.0),
+///     text("Body text here.").color(theme.text_secondary),
+/// ])
+/// ```
+pub fn card(children: impl IntoIterator<Item = AnyView>) -> AnyView {
+    let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
+    // Border effect: outer container in border colour, inner inset by 1 px.
+    col([
+        col(children)
+            .padding(theme.space_4)
+            .background(theme.surface)
+            .corner_radius(theme.radius_md - 1.0),
+    ])
+    .padding(1.0)
+    .background(theme.border)
+    .corner_radius(theme.radius_md)
+}
+
+// ── badge ─────────────────────────────────────────────────────────────────────
+
+/// Small primary-coloured pill — version numbers, counts, status labels.
+pub fn badge(text_str: &str) -> AnyView {
+    let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
+    col([text(text_str).size(11.0).color(theme.on_primary)])
+        .padding_xy(8.0, 3.0)
+        .background(theme.primary)
+        .corner_radius(theme.radius_xs)
+}
+
+/// Success (green) badge.
+pub fn badge_success(text_str: &str) -> AnyView {
+    let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
+    col([text(text_str).size(11.0).color(Color::WHITE)])
+        .padding_xy(8.0, 3.0)
+        .background(theme.success)
+        .corner_radius(theme.radius_xs)
+}
+
+/// Muted (surface-2) badge — for neutral labels, tags, secondary info.
+pub fn badge_muted(text_str: &str) -> AnyView {
+    let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
+    col([text(text_str).size(11.0).color(theme.text_secondary)])
+        .padding_xy(8.0, 3.0)
+        .background(theme.surface_2)
+        .corner_radius(theme.radius_xs)
+}
+
+// ── button variants ───────────────────────────────────────────────────────────
+
+/// Secondary button — uses `theme.surface_2` background and regular text.
+/// Less prominent than the primary `button()`, more prominent than ghost.
+pub fn button_secondary(label_str: &str, on_click: impl FnMut() + 'static) -> AnyView {
+    let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
+    AnyView {
+        inner: Box::new(ButtonDescriptor {
+            label: label_str.to_string(),
+            on_click: Box::new(on_click),
+            background: theme.surface_2,
+            foreground: theme.text,
+            overrides: StyleOverrides::default(),
+        }),
+    }
+}
+
+/// Ghost button — transparent background, primary text colour. Use inside
+/// cards or next to a primary button as a "cancel" or secondary action.
+pub fn button_ghost(label_str: &str, on_click: impl FnMut() + 'static) -> AnyView {
+    let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
+    AnyView {
+        inner: Box::new(ButtonDescriptor {
+            label: label_str.to_string(),
+            on_click: Box::new(on_click),
+            background: Color::TRANSPARENT,
+            foreground: theme.primary,
+            overrides: StyleOverrides::default(),
+        }),
+    }
+}
+
+/// Danger button — red background for irreversible or destructive actions.
+pub fn button_danger(label_str: &str, on_click: impl FnMut() + 'static) -> AnyView {
+    let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
+    AnyView {
+        inner: Box::new(ButtonDescriptor {
+            label: label_str.to_string(),
+            on_click: Box::new(on_click),
+            background: theme.danger,
+            foreground: Color::WHITE,
+            overrides: StyleOverrides::default(),
+        }),
+    }
+}
+
+// ── section_header ─────────────────────────────────────────────────────────────
+
+/// A section title + optional secondary text, rendered as a small header row.
+/// Useful above cards or content groups to label what's inside.
+pub fn section_header(title: &str, subtitle: &str) -> AnyView {
+    let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
+    let has_subtitle = !subtitle.is_empty();
+    col([
+        text(title).size(13.0).color(theme.text_secondary),
+        if has_subtitle { text(subtitle).size(11.0).color(theme.muted) } else { spacer().height(0.0) },
+    ])
+    .gap(2.0)
+}
+
+// ── key_value ──────────────────────────────────────────────────────────────────
+
+/// A single label + value row — for settings displays, metadata, detail panes.
+///     Left: muted label text
+///     Right: primary value text
+pub fn key_value(key: &str, value: &str) -> AnyView {
+    let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
+    row([
+        text(key).size(14.0).color(theme.text_secondary),
+        spacer(),
+        text(value).size(14.0).color(theme.text),
+    ])
+    .align(AlignItems::Center)
+}
+
+/// Reactive version of `key_value` — `value_fn` re-runs when signals it
+/// reads change.
+pub fn key_value_dyn(key: &str, value_fn: impl Fn() -> String + 'static) -> AnyView {
+    let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
+    row([
+        text(key).size(14.0).color(theme.text_secondary),
+        spacer(),
+        label(value_fn).size(14.0).color(theme.text),
+    ])
+    .align(AlignItems::Center)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

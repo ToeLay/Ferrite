@@ -1,114 +1,216 @@
+//! Ferrite showcase — Basic and Advanced tabs.
+//! Demonstrates card layout, text hierarchy, badges, button variants,
+//! reactive labels, sliders, checkboxes, and the theme system.
+
 use ferrite::prelude::*;
+use ferrite_core::view::{
+    badge, badge_muted, badge_success,
+    button_ghost, button_secondary,
+    card, divider, key_value_dyn, section_header,
+    spacer, switch,
+};
+use ferrite_core::Theme;
 
-#[derive(Clone, PartialEq, Eq, Hash)]
-enum Tab {
-    Basic,
-    Advanced,
-}
-
-#[derive(Clone)]
-struct Theme {
-    accent: Color,
-}
+#[derive(Clone, PartialEq, Eq)]
+enum Tab { Basic, Advanced }
 
 fn main() {
+    provide(Theme::light());
     let active_tab = use_state(Tab::Basic);
-    let theme = use_state(Theme { accent: Color::rgb(0.21, 0.43, 0.86) });
-    provide(theme);
 
-    ferrite::run(
-        "Ferrite Showcase",
-        (540, 480),
-        col([
-            text("Ferrite UI")
-                .size(28.0)
-                .color(Color::rgb(0.1, 0.1, 0.15)),
-            
-            row([
-                button("Basic", move || active_tab.set(Tab::Basic))
-                    .background(Color::rgb(0.9, 0.9, 0.92))
-                    .foreground(Color::rgb(0.3, 0.3, 0.35)),
-                button("Advanced", move || active_tab.set(Tab::Advanced))
-                    .background(Color::rgb(0.9, 0.9, 0.92))
-                    .foreground(Color::rgb(0.3, 0.3, 0.35)),
-            ]).gap(12.0),
+    ferrite::run("Ferrite", (500, 520), col([
+        // ── Header ───────────────────────────────────────────────────────
+        app_header(),
 
-            divider(),
+        divider(),
 
-            switch(active_tab, [
-                (Tab::Basic, basic_view()),
-                (Tab::Advanced, advanced_view()),
-            ]),
-        ])
-        .padding(32.0)
-        .gap(20.0),
-    );
+        // ── Tab bar ──────────────────────────────────────────────────────
+        tab_bar(active_tab),
+
+        divider(),
+
+        // ── Tab content ──────────────────────────────────────────────────
+        switch(active_tab, [
+            (Tab::Basic,    basic_tab()),
+            (Tab::Advanced, advanced_tab()),
+        ]),
+    ])
+    .padding(28.0)
+    .gap(16.0));
 }
 
-fn basic_view() -> AnyView {
-    let count = use_state(0i32);
-    let name = use_state(String::new());
+// ── App chrome ────────────────────────────────────────────────────────────────
 
-    col([
-        text("Basic Controls").size(20.0).color(Color::rgb(0.3, 0.3, 0.35)),
-        
-        row([
-            label(move || format!("Count: {}", count.get())).size(18.0),
-            spacer(),
-            button("+", move || count.update(|c| *c += 1)),
-        ]).align(AlignItems::Center).width(300.0),
-
-        row([
-            text("Name:").size(18.0),
-            spacer(),
-            input(name, "Type something...").width(200.0),
-        ]).align(AlignItems::Center).width(300.0),
-    ]).gap(16.0)
-}
-
-fn advanced_view() -> AnyView {
-    let volume = use_state(50.0);
-    let enable_sound = use_state(true);
-
-    let theme: Signal<Theme> = inject();
-
-    col([
-        text("Advanced Settings").size(20.0).color(Color::rgb(0.3, 0.3, 0.35)),
-        
+fn app_header() -> AnyView {
+    let theme = inject::<Theme>();
+    row([
         col([
-            row([
-                text("Master Volume").size(18.0),
-                spacer(),
-                slider(volume, 0.0, 100.0),
-            ]).align(AlignItems::Center),
-
-            row([
-                text("Enable Sound").size(18.0),
-                spacer(),
-                checkbox("", enable_sound),
-            ]).align(AlignItems::Center),
-        ])
-        .width(400.0)
-        .padding(16.0)
-        .corner_radius(8.0)
-        .background(Color::rgb(0.94, 0.95, 0.97))
-        .gap(12.0),
-
-        // Show label only when sound is enabled
-        label(move || format!("Volume is at {:.0}%", volume.get()))
-            .color(theme.get().accent)
-            .visible_when(move || enable_sound.get()),
-
+            text("Ferrite").size(22.0).color(theme.text),
+            text("UI Framework").size(12.0).color(theme.muted),
+        ]).gap(1.0),
         spacer(),
+        badge("v0.1"),
+    ])
+    .align(AlignItems::Center)
+}
 
-        button("Toggle Theme Color", move || {
-            theme.update(|t| {
-                if t.accent == Color::rgb(0.21, 0.43, 0.86) {
-                    t.accent = Color::rgb(0.86, 0.21, 0.43); // Red
-                } else {
-                    t.accent = Color::rgb(0.21, 0.43, 0.86); // Blue
-                }
-            })
-        }).background(Color::rgb(0.1, 0.1, 0.15)),
-    ]).gap(16.0)
+fn tab_bar(active: Signal<Tab>) -> AnyView {
+    let theme = inject::<Theme>();
+    row([
+        tab_button("Basic",    active, Tab::Basic),
+        tab_button("Advanced", active, Tab::Advanced),
+    ])
+    .gap(6.0)
+}
+
+/// A tab button that shows its active/inactive state by swapping between
+/// a filled (primary) and a ghost variant.
+fn tab_button(title: &'static str, active: Signal<Tab>, this: Tab) -> AnyView {
+    let this_active  = this.clone();
+    let this_inactive = this.clone();
+
+    col([
+        // Primary (active) version
+        button(title, {
+            let a = active;
+            let t = this.clone();
+            move || a.set(t.clone())
+        })
+        .visible_when(move || active.get() == this_active),
+
+        // Ghost (inactive) version
+        button_ghost(title, {
+            let a = active;
+            let t = this.clone();
+            move || a.set(t.clone())
+        })
+        .visible_when(move || active.get() != this_inactive),
+    ])
+}
+
+// ── Basic tab ─────────────────────────────────────────────────────────────────
+
+fn basic_tab() -> AnyView {
+    let theme = inject::<Theme>();
+    let count = use_state(0i32);
+    let name  = use_state(String::new());
+
+    col([
+        // ── Counter card ──────────────────────────────────────────────────
+        card([
+            // Card header row: label + status badge
+            row([
+                text("Counter").size(12.0).color(theme.text_secondary),
+                spacer(),
+                // Badge changes green above 0, muted when at 0
+                label(move || if count.get() > 0 { String::new() } else { String::new() })
+                    .visible_when(move || count.get() > 0)
+                    // (intentionally empty — the badge_success below shows instead)
+                    .size(1.0),
+                badge_success("Active")
+                    .visible_when(move || count.get() > 0),
+                badge_muted("Idle")
+                    .visible_when(move || count.get() == 0),
+            ])
+            .align(AlignItems::Center),
+
+            // Big number — the hero element of the card
+            label(move || count.get().to_string())
+                .size(64.0)
+                .color(theme.text),
+
+            // Controls row: reset on left, decrement/increment on right
+            row([
+                button_ghost("Reset", move || count.set(0)),
+                spacer(),
+                row([
+                    button_secondary("−", move || count.update(|c| *c -= 1)),
+                    button("+", move || count.update(|c| *c += 1)),
+                ]).gap(8.0),
+            ])
+            .align(AlignItems::Center),
+        ]),
+
+        // ── Name card ─────────────────────────────────────────────────────
+        card([
+            col([
+                text("Your name").size(12.0).color(theme.text_secondary),
+                input(name, "Ada Lovelace").width(360.0),
+                label(move || {
+                    let n = name.get();
+                    if n.is_empty() { String::new() }
+                    else { format!("Hello, {}!", n) }
+                })
+                .size(20.0)
+                .color(theme.primary)
+                .visible_when(move || !name.get().is_empty()),
+            ])
+            .gap(10.0),
+        ]),
+    ])
+    .gap(12.0)
+}
+
+// ── Advanced tab ──────────────────────────────────────────────────────────────
+
+fn advanced_tab() -> AnyView {
+    let theme = inject::<Theme>();
+    let volume = use_state(72.0f32);
+    let enabled = use_state(true);
+    let dark_mode = use_state(false);
+
+    col([
+        // ── Audio card ────────────────────────────────────────────────────
+        card([
+            section_header("Audio", ""),
+
+            col([
+                row([
+                    text("Enable audio").size(14.0).color(theme.text),
+                    spacer(),
+                    checkbox("", enabled),
+                ]).align(AlignItems::Center),
+
+                col([
+                    row([
+                        text("Master volume").size(14.0).color(theme.text),
+                        spacer(),
+                        label(move || format!("{:.0}%", volume.get()))
+                            .size(14.0)
+                            .color(theme.primary),
+                    ]).align(AlignItems::Center),
+
+                    slider(volume, 0.0, 100.0).width(380.0),
+                ])
+                .gap(8.0)
+                .visible_when(move || enabled.get()),
+
+                text("Audio is disabled.")
+                    .size(13.0)
+                    .color(theme.muted)
+                    .visible_when(move || !enabled.get()),
+            ])
+            .gap(14.0),
+        ]),
+
+        // ── Appearance card ───────────────────────────────────────────────
+        card([
+            section_header("Appearance", ""),
+
+            row([
+                text("Dark mode").size(14.0).color(theme.text),
+                spacer(),
+                checkbox("", dark_mode),
+            ]).align(AlignItems::Center),
+        ]),
+
+        // ── Info card: reactive stats ─────────────────────────────────────
+        card([
+            section_header("Current state", ""),
+            key_value_dyn("Volume",    move || format!("{:.0}", volume.get())),
+            key_value_dyn("Audio",     move || if enabled.get() { "On".into() } else { "Off".into() }),
+            key_value_dyn("Dark mode", move || if dark_mode.get() { "On".into() } else { "Off".into() }),
+        ]),
+    ])
+    .gap(12.0)
 }

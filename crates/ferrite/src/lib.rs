@@ -44,7 +44,11 @@ pub fn run(title: &str, size: (u32, u32), root: impl View) {
             title: title.to_string(),
             width: size.0,
             height: size.1,
-            background: Color::rgb(0.96, 0.97, 0.99),
+            // Pick up the theme's background colour if one was provided, so
+            // the window background matches the card/surface hierarchy.
+            background: ferrite_core::context::try_inject::<Theme>()
+                .map(|t| t.background)
+                .unwrap_or(Color::rgb(0.957, 0.961, 0.969)),
         },
         app,
     );

@@ -30,7 +30,6 @@ fn app() -> impl View {
     };
 
     let modal_overlay = {
-        let show_modal = show_modal.clone();
         move || {
             col([
                 modal_content()
