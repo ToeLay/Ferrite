@@ -29,6 +29,7 @@ impl<T> Clone for Signal<T> { fn clone(&self) -> Self { *self } }
 
 impl<T: Clone + 'static> Signal<T> {
     pub fn get(&self) -> T { runtime::get_signal_value(self.id) }
+    pub fn try_get(&self) -> Option<T> { runtime::try_get_signal_value(self.id) }
 }
 impl<T: 'static> Signal<T> {
     pub fn track(&self) { runtime::track(self.id); }

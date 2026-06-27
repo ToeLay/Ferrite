@@ -11,6 +11,8 @@ pub struct App {
     hover_pos: Option<(f32, f32)>,
     hover_time: f32,
     hovered_tooltip: Option<String>,
+    hovered_node: Option<NodeId>,
+    pressed_node: Option<NodeId>,
 }
 
 impl App {
@@ -26,6 +28,8 @@ impl App {
             hover_pos: None,
             hover_time: 0.0,
             hovered_tooltip: None,
+            hovered_node: None,
+            pressed_node: None,
         }
     }
 
@@ -35,6 +39,70 @@ impl App {
 
     pub fn set_hover_pos(&mut self, pos: Option<(f32, f32)>) {
         self.hover_pos = pos;
+        
+        let new_hover = pos.and_then(|(x, y)| {
+            let mut found = None;
+            for (_, overlay) in self.overlays.iter().rev() {
+                if let Some(f) = Self::find_hover_signal_at(overlay.as_ref(), &self.tree, 0.0, 0.0, x, y) {
+                    found = Some(f);
+                    break;
+                }
+            }
+            if found.is_none() {
+                found = Self::find_hover_signal_at(self.root.as_ref(), &self.tree, 0.0, 0.0, x, y);
+            }
+            found
+        });
+
+        if new_hover.map(|(n, _)| n) != self.hovered_node {
+            if let Some(old) = self.hovered_node {
+                if let Some((_, sig)) = Self::find_signal_by_node(self.root.as_ref(), &self.tree, old, true).or_else(|| {
+                    self.overlays.iter().find_map(|(_, o)| Self::find_signal_by_node(o.as_ref(), &self.tree, old, true))
+                }) {
+                    sig.set(false);
+                }
+            }
+            if let Some((new_id, new_sig)) = new_hover {
+                new_sig.set(true);
+                self.hovered_node = Some(new_id);
+            } else {
+                self.hovered_node = None;
+            }
+        }
+    }
+
+    fn find_hover_signal_at(w: &dyn Widget, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<(NodeId, ferrite_reactive::Signal<bool>)> {
+        let r = tree.layout(w.node_id());
+        let ax = ox + r.x; let ay = oy + r.y;
+        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return None; }
+        for child in w.children().iter().rev() {
+            if let Some(found) = Self::find_hover_signal_at(child.as_ref(), tree, ax, ay, px, py) { return Some(found); }
+        }
+        if let Some(sig) = w.hover_signal() { Some((w.node_id(), sig)) } else { None }
+    }
+
+    fn find_press_signal_at(w: &dyn Widget, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<(NodeId, ferrite_reactive::Signal<bool>)> {
+        let r = tree.layout(w.node_id());
+        let ax = ox + r.x; let ay = oy + r.y;
+        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return None; }
+        for child in w.children().iter().rev() {
+            if let Some(found) = Self::find_press_signal_at(child.as_ref(), tree, ax, ay, px, py) { return Some(found); }
+        }
+        if let Some(sig) = w.press_signal() { Some((w.node_id(), sig)) } else { None }
+    }
+
+    fn find_signal_by_node(w: &dyn Widget, tree: &LayoutTree, target: NodeId, hover: bool) -> Option<(NodeId, ferrite_reactive::Signal<bool>)> {
+        if w.node_id() == target {
+            if hover {
+                if let Some(sig) = w.hover_signal() { return Some((w.node_id(), sig)); }
+            } else {
+                if let Some(sig) = w.press_signal() { return Some((w.node_id(), sig)); }
+            }
+        }
+        for child in w.children() {
+            if let Some(found) = Self::find_signal_by_node(child.as_ref(), tree, target, hover) { return Some(found); }
+        }
+        None
     }
 
     pub fn absolute_rect(&self, target: NodeId) -> Option<Rect> {
@@ -183,6 +251,21 @@ impl App {
             new_focus = self.root.find_focusable_at(&self.tree, 0.0, 0.0, x, y);
         }
 
+        let mut press = None;
+        for (_, overlay) in self.overlays.iter().rev() {
+            if let Some(p) = Self::find_press_signal_at(overlay.as_ref(), &self.tree, 0.0, 0.0, x, y) {
+                press = Some(p);
+                break;
+            }
+        }
+        if press.is_none() {
+            press = Self::find_press_signal_at(self.root.as_ref(), &self.tree, 0.0, 0.0, x, y);
+        }
+        if let Some((id, sig)) = press {
+            sig.set(true);
+            self.pressed_node = Some(id);
+        }
+
         if new_focus != self.focused {
             if let Some(old) = self.focused { self.root.dispatch_focus(old, false); }
             if let Some(new) = new_focus  {
@@ -243,6 +326,14 @@ impl App {
 
     pub fn release_drag(&mut self) {
         self.active_drag = None;
+        
+        if let Some(old) = self.pressed_node.take() {
+            if let Some((_, sig)) = Self::find_signal_by_node(self.root.as_ref(), &self.tree, old, false).or_else(|| {
+                self.overlays.iter().find_map(|(_, o)| Self::find_signal_by_node(o.as_ref(), &self.tree, old, false))
+            }) {
+                sig.set(false);
+            }
+        }
     }
 
     pub fn scroll(&mut self, px: f32, py: f32, dx: f32, dy: f32) -> bool {

@@ -58,6 +58,17 @@ fn app() -> impl View {
             }).margin(10.0),
         ]).margin(20.0),
 
+        // 5. Iterator View Composition
+        text("Static List Built with Iterators:").margin(10.0),
+        ["Option A", "Option B", "Option C"].iter()
+            .map(|name| text(name).size(16.0).padding(10.0))
+            .intersperse_with(|| divider())
+            .collect_col()
+            .width(200.0)
+            .margin(10.0)
+            .background(Color::rgb(0.9, 0.9, 0.9))
+            .corner_radius(8.0),
+
         // Overlay Components defined declaratively:
         
         // Modal Declaration

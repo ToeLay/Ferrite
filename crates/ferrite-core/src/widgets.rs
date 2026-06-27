@@ -74,6 +74,9 @@ pub struct Button {
     pub(crate) foreground: Color,
     pub(crate) theme: Theme,
     pub(crate) focused: bool,
+    pub(crate) hovered: ferrite_reactive::Signal<bool>,
+    pub(crate) pressed: ferrite_reactive::Signal<bool>,
+    pub(crate) anim: ferrite_reactive::Signal<f32>,
 }
 impl Button {
     pub fn background(mut self, c: Color) -> Self { self.background = c; self }
@@ -86,6 +89,8 @@ impl Widget for Button {
         self.focused = focused;
         request_repaint();
     }
+    fn hover_signal(&self) -> Option<ferrite_reactive::Signal<bool>> { Some(self.hovered) }
+    fn press_signal(&self) -> Option<ferrite_reactive::Signal<bool>> { Some(self.pressed) }
     fn on_key(&mut self, event: &crate::KeyEvent) -> bool {
         if self.focused {
             if event.key == crate::KeyCode::Return || event.key == crate::KeyCode::Char(' ') {
@@ -109,7 +114,18 @@ impl Widget for Button {
                 color: self.theme.surface, corner_radius: 12.0,
             });
         }
-        out.push(DrawCommand::Rect { rect, color: self.background, corner_radius: 10.0 });
+        
+        // animate color based on state (0 = normal, 1 = hovered, 2 = pressed)
+        let state = self.anim.get();
+        let bg = if state > 1.0 {
+            // Blend from hovered to pressed
+            self.background.lighten(0.1).lerp(&self.background.darken(0.1), state - 1.0)
+        } else {
+            // Blend from normal to hovered
+            self.background.lerp(&self.background.lighten(0.1), state)
+        };
+        
+        out.push(DrawCommand::Rect { rect, color: bg, corner_radius: 10.0 });
         out.push(DrawCommand::Text {
             x: rect.x + 18.0, y: rect.y + rect.height / 2.0 - 9.0,
             content: self.label.clone(), size: 18.0, color: self.foreground,

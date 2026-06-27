@@ -151,6 +151,15 @@ pub(crate) fn get_signal_value<T: Clone + 'static>(id: NodeId) -> T {
     })
 }
 
+pub(crate) fn try_get_signal_value<T: Clone + 'static>(id: NodeId) -> Option<T> {
+    track(id);
+    with_runtime(|rt| match rt.get_kind(id) {
+        Some(NodeKind::Signal { value, .. }) =>
+            value.downcast_ref::<T>().cloned(),
+        _ => None,
+    })
+}
+
 pub(crate) fn get_memo_value<T: Clone + 'static>(id: NodeId) -> T {
     track(id);
     with_runtime(|rt| match rt.get_kind(id) {

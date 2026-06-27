@@ -30,6 +30,12 @@ pub trait Widget {
     /// Optional tooltip text to display when the widget is hovered.
     fn tooltip(&self) -> Option<&str> { None }
 
+    /// Optional signal to track hover state.
+    fn hover_signal(&self) -> Option<ferrite_reactive::Signal<bool>> { None }
+
+    /// Optional signal to track press state.
+    fn press_signal(&self) -> Option<ferrite_reactive::Signal<bool>> { None }
+
     /// Called before layout to process reactive state changes or dynamic children
     fn update(&mut self, _tree: &mut LayoutTree) {}
 

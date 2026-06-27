@@ -43,20 +43,40 @@ pub fn use_spring(mut target: impl FnMut() -> f32 + 'static, config: SpringConfi
     // inside the hot animation loop which might trigger repaints needlessly if not bounded.
     // Wait, if we use signals, setting it WILL trigger a repaint, which is what we want!
     
+    let anim_id = std::rc::Rc::new(std::cell::Cell::new(0usize));
+    
     // Track the target. Whenever it changes, ensure the animation loop is running.
     create_effect(move || {
         let dest = target();
+        let current_id = anim_id.get() + 1;
+        anim_id.set(current_id);
+        
+        let anim_id_clone = anim_id.clone();
         
         request_animation_frame(move |dt| {
-            let mut c = current.get();
-            let mut v = velocity.get();
+            if anim_id_clone.get() != current_id {
+                return false; // Superseded by a newer animation
+            }
             
-            // Semi-implicit Euler integration
-            let force = -config.stiffness * (c - dest) - config.damping * v;
-            let acceleration = force / config.mass;
+            let (mut c, mut v) = match (current.try_get(), velocity.try_get()) {
+                (Some(c), Some(v)) => (c, v),
+                _ => return false, // Signals disposed, stop animation
+            };
             
-            v += acceleration * dt;
-            c += v * dt;
+            // Sub-step the integration to ensure stability even with large dt
+            let max_step = 0.008; // 8ms maximum step
+            let mut remaining_dt = dt;
+            
+            while remaining_dt > 0.0 {
+                let step = remaining_dt.min(max_step);
+                remaining_dt -= step;
+                
+                let force = -config.stiffness * (c - dest) - config.damping * v;
+                let acceleration = force / config.mass;
+                
+                v += acceleration * step;
+                c += v * step;
+            }
             
             current.set(c);
             velocity.set(v);

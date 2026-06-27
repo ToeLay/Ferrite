@@ -18,7 +18,7 @@ pub use dirty::{request_repaint, take_dirty};
 pub use draw::DrawCommand;
 pub use event::{KeyCode, KeyEvent, Modifiers};
 pub use overlay::{show_overlay, remove_overlay};
-pub use view::{AnyView, View};
+pub use view::{AnyView, View, ViewIteratorExt};
 pub use widget::Widget;
 pub use theme::Theme;
 

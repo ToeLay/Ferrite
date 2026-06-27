@@ -9,7 +9,7 @@ pub use ferrite_reactive::{create_effect, create_memo, create_signal, Memo, Scop
 pub use ferrite_reactive::{use_spring, use_tween, SpringConfig};
 
 // New declarative API
-pub use ferrite_core::{AnyView, View};
+pub use ferrite_core::{AnyView, View, ViewIteratorExt};
 pub use ferrite_core::{text, label, button, input, textarea, col, row, spacer, divider, checkbox, slider, switch, scroll, list, portal, modal, dropdown, Anchor};
 pub use ferrite_core::{provide, inject, reset_context, Theme};
 pub use ferrite_core::{toast, toaster};
@@ -72,7 +72,7 @@ pub mod prelude {
     // Declarative API (primary)
     pub use crate::{
         text, label, button, input, textarea, col, row, spacer, divider, checkbox, slider, switch, scroll, list, portal, modal, dropdown, Anchor,
-        AnyView, View, Theme,
+        AnyView, View, ViewIteratorExt, Theme,
         provide, inject, reset_context, use_state,
         toast,
         run, run_with,

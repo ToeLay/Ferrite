@@ -11,12 +11,26 @@ pub fn use_tween(mut target: impl FnMut() -> f32 + 'static, duration: f32, easin
     // Instead, we capture a mutable variable in the effect.
     // Wait, `create_effect` re-runs entirely when `target` changes. So we can just initialize state here!
     
+    let anim_id = std::rc::Rc::new(std::cell::Cell::new(0usize));
+    
     create_effect(move || {
         let dest = target();
-        let start_val = current.get();
+        let current_id = anim_id.get() + 1;
+        anim_id.set(current_id);
+        
+        let start_val = match current.try_get() {
+            Some(v) => v,
+            None => return, // disposed
+        };
+        
         let mut elapsed = 0.0_f32;
+        let anim_id_clone = anim_id.clone();
         
         request_animation_frame(move |dt| {
+            if anim_id_clone.get() != current_id {
+                return false; // superseded
+            }
+            
             elapsed += dt;
             if elapsed >= duration {
                 current.set(dest);

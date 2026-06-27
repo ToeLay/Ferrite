@@ -17,6 +17,8 @@
 use ferrite_core::{Color as FColor, DrawCommand, Rect as FRect};
 use fontdue::{Font, FontSettings};
 use std::sync::OnceLock;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use tiny_skia::{FillRule, Mask, Paint, PathBuilder, Pixmap, Rect as SkRect, Transform};
 
 static FONT_BYTES: &[u8] = include_bytes!("../assets/IBMPlexMono-Regular.ttf");
@@ -25,6 +27,23 @@ fn font() -> &'static Font {
     static FONT: OnceLock<Font> = OnceLock::new();
     FONT.get_or_init(|| {
         Font::from_bytes(FONT_BYTES, FontSettings::default()).expect("embedded font failed to parse")
+    })
+}
+
+thread_local! {
+    static GLYPH_CACHE: RefCell<HashMap<(char, u32), (fontdue::Metrics, Vec<u8>)>> = RefCell::new(HashMap::new());
+}
+
+fn rasterize_glyph(ch: char, size: f32) -> (fontdue::Metrics, Vec<u8>) {
+    let size_bits = size.to_bits();
+    GLYPH_CACHE.with(|cache| {
+        let mut map = cache.borrow_mut();
+        if let Some(cached) = map.get(&(ch, size_bits)) {
+            return cached.clone();
+        }
+        let (metrics, bitmap) = font().rasterize(ch, size);
+        map.insert((ch, size_bits), (metrics.clone(), bitmap.clone()));
+        (metrics, bitmap)
     })
 }
 
@@ -307,7 +326,7 @@ fn draw_text(pixmap: &mut Pixmap, x: f32, y: f32, content: &str, size: f32, colo
             }
         }
 
-        let (_, bitmap) = f.rasterize(ch, size);
+        let (metrics, bitmap) = rasterize_glyph(ch, size);
 
         for row in 0..metrics.height {
             for col in 0..metrics.width {

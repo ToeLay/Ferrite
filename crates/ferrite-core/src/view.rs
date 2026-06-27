@@ -186,6 +186,26 @@ impl AnyView {
         }
     }
 
+    pub fn on_hover(self, callback: impl FnMut(bool) + 'static) -> Self {
+        AnyView {
+            inner: Box::new(TrackHoverDescriptor {
+                inner: self,
+                callback: Box::new(callback),
+                overrides: StyleOverrides::default(),
+            }),
+        }
+    }
+
+    pub fn on_press(self, callback: impl FnMut(bool) + 'static) -> Self {
+        AnyView {
+            inner: Box::new(TrackPressDescriptor {
+                inner: self,
+                callback: Box::new(callback),
+                overrides: StyleOverrides::default(),
+            }),
+        }
+    }
+
     pub fn anchor(self, token: Anchor) -> Self {
         AnyView {
             inner: Box::new(AnchorDescriptor {
@@ -205,6 +225,117 @@ pub trait View {
 
 impl View for AnyView {
     fn view(self) -> AnyView { self }
+}
+
+// ── ViewIteratorExt ──────────────────────────────────────────────────────────
+
+pub trait ViewIteratorExt: Iterator<Item = AnyView> + Sized {
+    /// Collect views into a vertical column.
+    fn collect_col(self) -> AnyView {
+        col(self.collect::<Vec<_>>())
+    }
+
+    /// Collect views into a horizontal row.
+    fn collect_row(self) -> AnyView {
+        row(self.collect::<Vec<_>>())
+    }
+
+    /// Insert a separator view between each item.
+    fn intersperse_with<F: FnMut() -> AnyView>(self, separator: F) -> IntersperseWith<Self, F> {
+        IntersperseWith { iter: self.peekable(), separator, needs_sep: false }
+    }
+}
+
+impl<I: Iterator<Item = AnyView> + Sized> ViewIteratorExt for I {}
+
+pub struct IntersperseWith<I: Iterator, F> {
+    iter: std::iter::Peekable<I>,
+    separator: F,
+    needs_sep: bool,
+}
+
+impl<I: Iterator<Item = AnyView>, F: FnMut() -> AnyView> Iterator for IntersperseWith<I, F> {
+    type Item = AnyView;
+    fn next(&mut self) -> Option<AnyView> {
+        if self.needs_sep {
+            if self.iter.peek().is_some() {
+                self.needs_sep = false;
+                return Some((self.separator)());
+            }
+        }
+        self.iter.next().map(|item| {
+            self.needs_sep = true;
+            item
+        })
+    }
+}
+
+// ── ScopedWidget ─────────────────────────────────────────────────────────────
+
+struct ScopedWidget {
+    inner: Box<dyn crate::Widget>,
+    scope: Option<ferrite_reactive::Scope>,
+}
+
+impl crate::Widget for ScopedWidget {
+    fn node_id(&self) -> ferrite_layout::NodeId { self.inner.node_id() }
+    fn children(&self) -> &[Box<dyn crate::Widget>] { self.inner.children() }
+    fn children_mut(&mut self) -> &mut [Box<dyn crate::Widget>] { self.inner.children_mut() }
+    fn paint_self(&self, rect: ferrite_layout::Rect, out: &mut Vec<crate::DrawCommand>) { self.inner.paint_self(rect, out) }
+    fn on_click(&mut self) -> bool { self.inner.on_click() }
+    fn is_focusable(&self) -> bool { self.inner.is_focusable() }
+    fn on_focus_change(&mut self, focused: bool) { self.inner.on_focus_change(focused) }
+    fn on_key(&mut self, event: &crate::KeyEvent) -> bool { self.inner.on_key(event) }
+    fn tooltip(&self) -> Option<&str> { self.inner.tooltip() }
+    fn hover_signal(&self) -> Option<ferrite_reactive::Signal<bool>> { self.inner.hover_signal() }
+    fn press_signal(&self) -> Option<ferrite_reactive::Signal<bool>> { self.inner.press_signal() }
+    fn update(&mut self, tree: &mut ferrite_layout::LayoutTree) { self.inner.update(tree) }
+    fn destroy(&mut self, tree: &mut ferrite_layout::LayoutTree) {
+        self.inner.destroy(tree);
+        // The drop implementation handles scope disposal, but we could also do it here.
+    }
+    
+    // We must forward default-provided methods to preserve behavior
+    fn paint(&self, tree: &ferrite_layout::LayoutTree, ox: f32, oy: f32, out: &mut Vec<crate::DrawCommand>) {
+        self.inner.paint(tree, ox, oy, out)
+    }
+    fn click_at(&mut self, tree: &ferrite_layout::LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<ferrite_layout::NodeId> {
+        self.inner.click_at(tree, ox, oy, px, py)
+    }
+    fn double_click_at(&mut self, tree: &ferrite_layout::LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<ferrite_layout::NodeId> {
+        self.inner.double_click_at(tree, ox, oy, px, py)
+    }
+    fn on_double_click(&mut self) -> bool { self.inner.on_double_click() }
+    fn triple_click_at(&mut self, tree: &ferrite_layout::LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<ferrite_layout::NodeId> {
+        self.inner.triple_click_at(tree, ox, oy, px, py)
+    }
+    fn on_triple_click(&mut self) -> bool { self.inner.on_triple_click() }
+    fn drag_at(&mut self, tree: &ferrite_layout::LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
+        self.inner.drag_at(tree, ox, oy, px, py)
+    }
+    fn dispatch_drag(&mut self, target: ferrite_layout::NodeId, tree: &ferrite_layout::LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
+        self.inner.dispatch_drag(target, tree, ox, oy, px, py)
+    }
+    fn scroll_at(&mut self, tree: &ferrite_layout::LayoutTree, ox: f32, oy: f32, px: f32, py: f32, dx: f32, dy: f32) -> bool {
+        self.inner.scroll_at(tree, ox, oy, px, py, dx, dy)
+    }
+    fn find_focusable_at(&self, tree: &ferrite_layout::LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<ferrite_layout::NodeId> {
+        self.inner.find_focusable_at(tree, ox, oy, px, py)
+    }
+    fn dispatch_focus(&mut self, target: ferrite_layout::NodeId, focused: bool) {
+        self.inner.dispatch_focus(target, focused)
+    }
+    fn dispatch_key(&mut self, target: ferrite_layout::NodeId, event: &crate::KeyEvent) -> bool {
+        self.inner.dispatch_key(target, event)
+    }
+}
+
+impl Drop for ScopedWidget {
+    fn drop(&mut self) {
+        if let Some(scope) = self.scope.take() {
+            scope.dispose();
+        }
+    }
 }
 
 // ── TooltipDescriptor ──────────────────────────────────────────────────────────
@@ -248,6 +379,104 @@ impl ViewDescriptor for TooltipDescriptor {
         overrides.apply_to(&mut style);
         let node = tree.new_with_children(style, &[child.node_id()]);
         Box::new(TooltipWidget { node, child, text })
+    }
+    fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
+}
+
+// ── TrackHoverDescriptor ───────────────────────────────────────────────────────
+
+struct TrackHoverDescriptor {
+    inner: AnyView,
+    callback: Box<dyn FnMut(bool)>,
+    overrides: StyleOverrides,
+}
+
+struct TrackHoverWidget {
+    node: ferrite_layout::NodeId,
+    child: Box<dyn crate::Widget>,
+    signal: Signal<bool>,
+}
+
+impl crate::Widget for TrackHoverWidget {
+    fn node_id(&self) -> ferrite_layout::NodeId { self.node }
+    fn children(&self) -> &[Box<dyn crate::Widget>] { std::slice::from_ref(&self.child) }
+    fn children_mut(&mut self) -> &mut [Box<dyn crate::Widget>] { std::slice::from_mut(&mut self.child) }
+    fn hover_signal(&self) -> Option<Signal<bool>> { Some(self.signal) }
+    fn update(&mut self, tree: &mut ferrite_layout::LayoutTree) { self.child.update(tree); }
+    fn paint(&self, tree: &ferrite_layout::LayoutTree, ox: f32, oy: f32, out: &mut Vec<crate::DrawCommand>) {
+        let r = tree.layout(self.node);
+        self.child.paint(tree, ox + r.x, oy + r.y, out);
+    }
+}
+
+impl ViewDescriptor for TrackHoverDescriptor {
+    fn build(mut self: Box<Self>, tree: &mut ferrite_layout::LayoutTree) -> Box<dyn crate::Widget> {
+        let scope = ferrite_reactive::Scope::new();
+        let widget = scope.run(|| {
+            let signal = ferrite_reactive::create_signal(false);
+            let mut callback = self.callback;
+            ferrite_reactive::create_effect(move || {
+                if let Some(val) = signal.try_get() {
+                    callback(val);
+                }
+            });
+            let TrackHoverDescriptor { inner, overrides, .. } = *self;
+            let child = inner.build(tree);
+            let mut style = ferrite_layout::Style::default();
+            overrides.apply_to(&mut style);
+            let node = tree.new_with_children(style, &[child.node_id()]);
+            Box::new(TrackHoverWidget { node, child, signal }) as Box<dyn crate::Widget>
+        });
+        Box::new(ScopedWidget { inner: widget, scope: Some(scope) })
+    }
+    fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
+}
+
+// ── TrackPressDescriptor ───────────────────────────────────────────────────────
+
+struct TrackPressDescriptor {
+    inner: AnyView,
+    callback: Box<dyn FnMut(bool)>,
+    overrides: StyleOverrides,
+}
+
+struct TrackPressWidget {
+    node: ferrite_layout::NodeId,
+    child: Box<dyn crate::Widget>,
+    signal: Signal<bool>,
+}
+
+impl crate::Widget for TrackPressWidget {
+    fn node_id(&self) -> ferrite_layout::NodeId { self.node }
+    fn children(&self) -> &[Box<dyn crate::Widget>] { std::slice::from_ref(&self.child) }
+    fn children_mut(&mut self) -> &mut [Box<dyn crate::Widget>] { std::slice::from_mut(&mut self.child) }
+    fn press_signal(&self) -> Option<Signal<bool>> { Some(self.signal) }
+    fn update(&mut self, tree: &mut ferrite_layout::LayoutTree) { self.child.update(tree); }
+    fn paint(&self, tree: &ferrite_layout::LayoutTree, ox: f32, oy: f32, out: &mut Vec<crate::DrawCommand>) {
+        let r = tree.layout(self.node);
+        self.child.paint(tree, ox + r.x, oy + r.y, out);
+    }
+}
+
+impl ViewDescriptor for TrackPressDescriptor {
+    fn build(mut self: Box<Self>, tree: &mut ferrite_layout::LayoutTree) -> Box<dyn crate::Widget> {
+        let scope = ferrite_reactive::Scope::new();
+        let widget = scope.run(|| {
+            let signal = ferrite_reactive::create_signal(false);
+            let mut callback = self.callback;
+            ferrite_reactive::create_effect(move || {
+                if let Some(val) = signal.try_get() {
+                    callback(val);
+                }
+            });
+            let TrackPressDescriptor { inner, overrides, .. } = *self;
+            let child = inner.build(tree);
+            let mut style = ferrite_layout::Style::default();
+            overrides.apply_to(&mut style);
+            let node = tree.new_with_children(style, &[child.node_id()]);
+            Box::new(TrackPressWidget { node, child, signal }) as Box<dyn crate::Widget>
+        });
+        Box::new(ScopedWidget { inner: widget, scope: Some(scope) })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
 }
@@ -352,18 +581,22 @@ struct LabelDescriptor {
 
 impl ViewDescriptor for LabelDescriptor {
     fn build(self: Box<Self>, tree: &mut LayoutTree) -> Box<dyn Widget> {
-        let LabelDescriptor { compute, font_size, color, overrides } = *self;
-        let initial = compute();
-        let mut style = Style::default();
-        overrides.apply_to(&mut style);
-        let content = Rc::new(RefCell::new(initial));
-        let node = tree.new_text_leaf(style, content.clone(), font_size);
-        let c2 = content.clone();
-        create_effect(move || { 
-            *c2.borrow_mut() = compute(); 
-            crate::dirty::request_layout(node); 
+        let scope = ferrite_reactive::Scope::new();
+        let widget = scope.run(|| {
+            let LabelDescriptor { compute, font_size, color, overrides } = *self;
+            let initial = compute();
+            let mut style = Style::default();
+            overrides.apply_to(&mut style);
+            let content = Rc::new(RefCell::new(initial));
+            let node = tree.new_text_leaf(style, content.clone(), font_size);
+            let c2 = content.clone();
+            create_effect(move || { 
+                *c2.borrow_mut() = compute(); 
+                crate::dirty::request_layout(node); 
+            });
+            Box::new(Text { node, content, color, size: font_size }) as Box<dyn Widget>
         });
-        Box::new(Text { node, content, color, size: font_size })
+        Box::new(ScopedWidget { inner: widget, scope: Some(scope) })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
     fn set_font_size(&mut self, s: f32) { self.font_size = s; }
@@ -394,17 +627,37 @@ struct ButtonDescriptor {
 
 impl ViewDescriptor for ButtonDescriptor {
     fn build(self: Box<Self>, tree: &mut LayoutTree) -> Box<dyn Widget> {
-        let ButtonDescriptor { label, on_click, background, foreground, overrides } = *self;
-        let char_w = label.chars().count() as f32 * 18.0 * 0.62;
-        let mut style = Style {
-            width: Size::Px((char_w + 36.0).max(56.0)),
-            height: Size::Px(42.0),
-            ..Default::default()
-        };
-        overrides.apply_to(&mut style);
-        let node = tree.new_leaf(style);
-        let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
-        Box::new(Button { node, label, on_click, background, foreground, theme, focused: false })
+        let scope = ferrite_reactive::Scope::new();
+        let widget = scope.run(|| {
+            let ButtonDescriptor { label, on_click, background, foreground, overrides } = *self;
+            let char_w = label.chars().count() as f32 * 18.0 * 0.62;
+            let mut style = Style {
+                width: Size::Px((char_w + 36.0).max(56.0)),
+                height: Size::Px(42.0),
+                ..Default::default()
+            };
+            overrides.apply_to(&mut style);
+            let node = tree.new_leaf(style);
+            let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
+            
+            let hovered = ferrite_reactive::create_signal(false);
+            let pressed = ferrite_reactive::create_signal(false);
+            
+            let anim = ferrite_reactive::use_spring(
+                move || {
+                    if pressed.get() { 2.0 }
+                    else if hovered.get() { 1.0 }
+                    else { 0.0 }
+                },
+                ferrite_reactive::SpringConfig::stiff()
+            );
+            
+            Box::new(widgets::Button { 
+                node, label, on_click, background, foreground, theme, focused: false,
+                hovered, pressed, anim
+            }) as Box<dyn Widget>
+        });
+        Box::new(ScopedWidget { inner: widget, scope: Some(scope) })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
     fn set_background(&mut self, c: Color) { self.background = c; }
@@ -630,15 +883,19 @@ struct CheckboxDescriptor {
 
 impl ViewDescriptor for CheckboxDescriptor {
     fn build(self: Box<Self>, tree: &mut LayoutTree) -> Box<dyn Widget> {
-        let CheckboxDescriptor { label, checked, font_size, overrides } = *self;
-        let mut style = widgets::checkbox_style(label.len(), font_size);
-        overrides.apply_to(&mut style);
-        let node = tree.new_leaf(style);
-        let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
-        
-        let anim = ferrite_reactive::use_spring(move || if checked.get() { 1.0 } else { 0.0 }, ferrite_reactive::SpringConfig::bouncy());
-        
-        Box::new(Checkbox { node, label_text: label, checked, anim, font_size, theme })
+        let scope = ferrite_reactive::Scope::new();
+        let widget = scope.run(|| {
+            let CheckboxDescriptor { label, checked, font_size, overrides } = *self;
+            let mut style = widgets::checkbox_style(label.len(), font_size);
+            overrides.apply_to(&mut style);
+            let node = tree.new_leaf(style);
+            let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
+            
+            let anim = ferrite_reactive::use_spring(move || if checked.get() { 1.0 } else { 0.0 }, ferrite_reactive::SpringConfig::bouncy());
+            
+            Box::new(Checkbox { node, label_text: label, checked, anim, font_size, theme }) as Box<dyn Widget>
+        });
+        Box::new(ScopedWidget { inner: widget, scope: Some(scope) })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
     fn set_font_size(&mut self, s: f32) { self.font_size = s; }
@@ -861,38 +1118,42 @@ struct ListDescriptor<T> {
 
 impl<T: Clone + 'static> ViewDescriptor for ListDescriptor<T> {
     fn build(self: Box<Self>, tree: &mut LayoutTree) -> Box<dyn Widget> {
-        let items = self.signal.get();
-        let mut children = Vec::with_capacity(items.len());
-        let mut child_nodes = Vec::with_capacity(items.len());
-        
-        for item in &items {
-            let child = (self.view_fn)(item).build(tree);
-            child_nodes.push(child.node_id());
-            children.push(child);
-        }
+        let scope = ferrite_reactive::Scope::new();
+        let widget = scope.run(|| {
+            let items = self.signal.get();
+            let mut children = Vec::with_capacity(items.len());
+            let mut child_nodes = Vec::with_capacity(items.len());
+            
+            for item in &items {
+                let child = (self.view_fn)(item).build(tree);
+                child_nodes.push(child.node_id());
+                children.push(child);
+            }
 
-        let mut natural_style = Style {
-            direction: Direction::Column, // Default to column for lists
-            ..Default::default()
-        };
-        self.overrides.apply_to(&mut natural_style);
-        
-        let node = tree.new_with_children(natural_style, &child_nodes);
-        let last_revision = ferrite_reactive::get_mutations(self.signal, 0).0;
+            let mut natural_style = Style {
+                direction: Direction::Column, // Default to column for lists
+                ..Default::default()
+            };
+            self.overrides.apply_to(&mut natural_style);
+            
+            let node = tree.new_with_children(natural_style, &child_nodes);
+            let last_revision = ferrite_reactive::get_mutations(self.signal, 0).0;
 
-        let sig_eff = self.signal.clone();
-        ferrite_reactive::create_effect(move || {
-            sig_eff.track(); // Subscribe to any mutation or change
-            crate::dirty::request_repaint();
+            let sig_eff = self.signal.clone();
+            ferrite_reactive::create_effect(move || {
+                sig_eff.track(); // Subscribe to any mutation or change
+                crate::dirty::request_repaint();
+            });
+
+            Box::new(ListWidget {
+                node,
+                signal: self.signal,
+                view_fn: self.view_fn,
+                children,
+                last_revision,
+            }) as Box<dyn Widget>
         });
-
-        Box::new(ListWidget {
-            node,
-            signal: self.signal,
-            view_fn: self.view_fn,
-            children,
-            last_revision,
-        })
+        Box::new(ScopedWidget { inner: widget, scope: Some(scope) })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
 }
