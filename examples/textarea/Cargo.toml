@@ -6,3 +6,4 @@ license.workspace = true
 
 [dependencies]
 ferrite = { path = "../../crates/ferrite" }
+ferrite-core = { version = "0.1.0", path = "../../crates/ferrite-core" }

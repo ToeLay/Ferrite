@@ -65,6 +65,7 @@ pub struct Text {
     pub(crate) color: Color,
     pub(crate) size: f32,
     pub(crate) single_line: bool,
+    pub(crate) version: std::rc::Rc<std::cell::Cell<u64>>,
 }
 impl Text {
     pub fn color(mut self, color: Color) -> Self { self.color = color; self }
@@ -73,6 +74,7 @@ impl Widget for Text {
     fn node_id(&self) -> NodeId { self.node }
     fn paint_self(&self, rect: Rect, out: &mut Vec<DrawCommand>) {
         out.push(DrawCommand::Text {
+            id: self.node.id(), version: self.version.get(),
             x: rect.x, y: rect.y,
             content: self.content.borrow().clone(),
             size: self.size, color: self.color,
@@ -124,16 +126,9 @@ impl Widget for Button {
     }
     fn paint_self(&self, rect: Rect, out: &mut Vec<DrawCommand>) {
         if self.focused {
-            // Draw a 2px focus ring with a 2px gap around the button
-            // 1. Outer ring (primary color)
-            out.push(DrawCommand::Rect {
+            out.push(DrawCommand::StrokeRect {
                 rect,
-                color: self.theme.primary, corner_radius: 14.0,
-            });
-            // 2. Inner gap (surface color to mask out the gap)
-            out.push(DrawCommand::Rect {
-                rect: Rect { x: rect.x + 2.0, y: rect.y + 2.0, width: rect.width - 4.0, height: rect.height - 4.0 },
-                color: self.theme.surface, corner_radius: 12.0,
+                color: self.theme.primary, corner_radius: 14.0, stroke_width: 2.0,
             });
         }
         
@@ -152,7 +147,8 @@ impl Widget for Button {
         
         out.push(DrawCommand::Rect { rect: bg_rect, color: bg, corner_radius: 10.0 });
         out.push(DrawCommand::Text {
-            x: bg_rect.x, y: bg_rect.y + bg_rect.height / 2.0 - self.font_size / 2.0,
+            id: self.node.id(), version: 0,
+            x: bg_rect.x, y: bg_rect.y + bg_rect.height / 2.0 - self.font_size * 0.7,
             content: self.label.clone(), size: self.font_size, color: self.foreground,
             max_width: Some(bg_rect.width),
             single_line: true,
@@ -182,6 +178,7 @@ pub struct TextInput {
     pub(crate) last_cursor: usize,
     pub(crate) last_selection: Option<usize>,
     pub(crate) last_width: f32,
+    pub(crate) text_version: u64,
     pub(crate) undo_stack: Vec<TextEditState>,
     pub(crate) redo_stack: Vec<TextEditState>,
 }
@@ -317,19 +314,26 @@ impl Widget for TextInput {
         let rel_x = px - (ax + pad) + self.scroll_x;
         let val = self.value.get();
         let mut found_idx = val.chars().count();
-        let mut current_px = 0.0;
+        let mut _current_px = 0.0;
         
         if rel_x <= 0.0 {
             found_idx = 0;
         } else {
-            let mut x_acc = 0.0f32;
-            for (i, ch) in val.chars().enumerate() {
-                let (cw, _) = tree.measure_text(&ch.to_string(), self.font_size, None);
-                if rel_x < x_acc + cw / 2.0 {
-                    found_idx = i;
+            let mut prev_w = 0.0;
+            for (i, _) in val.char_indices() {
+                if i == 0 { continue; }
+                let (w, _) = tree.measure_text(0, 0, &val[..i], self.font_size, None, true);
+                if rel_x < prev_w + (w - prev_w) / 2.0 {
+                    found_idx = val[..i].chars().count() - 1;
                     break;
                 }
-                x_acc += cw;
+                prev_w = w;
+            }
+            if found_idx == val.chars().count() {
+                let (w, _) = tree.measure_text(self.node.id(), self.text_version, &val, self.font_size, None, true);
+                if rel_x < prev_w + (w - prev_w) / 2.0 && found_idx > 0 {
+                    found_idx -= 1;
+                }
             }
         }
         
@@ -354,14 +358,21 @@ impl Widget for TextInput {
         if rel_x <= 0.0 {
             found_idx = 0;
         } else {
-            let mut x_acc = 0.0f32;
-            for (i, ch) in val.chars().enumerate() {
-                let (cw, _) = tree.measure_text(&ch.to_string(), self.font_size, None);
-                if rel_x < x_acc + cw / 2.0 {
-                    found_idx = i;
+            let mut prev_w = 0.0;
+            for (i, _) in val.char_indices() {
+                if i == 0 { continue; }
+                let (w, _) = tree.measure_text(0, 0, &val[..i], self.font_size, None, true);
+                if rel_x < prev_w + (w - prev_w) / 2.0 {
+                    found_idx = val[..i].chars().count() - 1;
                     break;
                 }
-                x_acc += cw;
+                prev_w = w;
+            }
+            if found_idx == val.chars().count() {
+                let (w, _) = tree.measure_text(self.node.id(), self.text_version, &val, self.font_size, None, true);
+                if rel_x < prev_w + (w - prev_w) / 2.0 && found_idx > 0 {
+                    found_idx -= 1;
+                }
             }
         }
         
@@ -399,19 +410,19 @@ impl Widget for TextInput {
         // Compute pixel offsets precisely using fontdue
         let byte_pos = val.char_indices().nth(self.cursor).map(|(i, _)| i).unwrap_or(val.len());
         let s = &val[..byte_pos];
-        let (w, _) = tree.measure_text(s, self.font_size, None);
+        let (w, _) = tree.measure_text(0, 0, s, self.font_size, None, true);
         self.cursor_px = w;
         
         if let Some(s_start) = self.selection_start {
             let s_byte = val.char_indices().nth(s_start).map(|(i, _)| i).unwrap_or(val.len());
             let s_str = &val[..s_byte];
-            let (sw, _) = tree.measure_text(s_str, self.font_size, None);
+            let (sw, _) = tree.measure_text(0, 0, s_str, self.font_size, None, true);
             self.selection_start_px = Some(sw);
         } else {
             self.selection_start_px = None;
         }
         
-        let (total_w, _) = tree.measure_text(&val, self.font_size, None);
+        let (total_w, _) = tree.measure_text(self.node.id(), self.text_version, &val, self.font_size, None, true);
         self.ensure_cursor_visible(r.width, total_w);
     }
 
@@ -562,17 +573,20 @@ impl Widget for TextInput {
         out.push(DrawCommand::PushClip { rect: inner });
         
         let val = self.value.get();
-        let text_y = rect.y + (rect.height - self.font_size) / 2.0;
+        let text_y = rect.y + (rect.height / 2.0) - (self.font_size * 0.7);
         let base_x = rect.x + pad - self.scroll_x;
         
         if val.is_empty() {
-            out.push(DrawCommand::Text { x: base_x, y: text_y, content: self.placeholder.clone(),
-                size: self.font_size, color: self.theme.muted, max_width: None, single_line: true, center: false });
+            out.push(DrawCommand::Text { id: self.node.id(), version: self.text_version, x: base_x, y: text_y, content: self.placeholder.clone(),
+                size: self.font_size, color: self.theme.muted, max_width: Some(rect.width - 2.0 * pad), single_line: true, center: false });
         } else {
-            out.push(DrawCommand::Text { x: base_x, y: text_y, content: val,
-                size: self.font_size, color: self.theme.on_surface, max_width: None, single_line: true, center: false });
+            out.push(DrawCommand::Text { id: self.node.id(), version: self.text_version, x: base_x, y: text_y, content: val,
+                size: self.font_size, color: self.theme.on_surface, max_width: Some(rect.width - 2.0 * pad), single_line: true, center: false });
         }
         if self.focused {
+            let line_height = self.font_size * 1.4;
+            let centering_offset = (line_height - self.font_size) / 2.0;
+            
             // Draw selection box
             if let Some((start, end)) = self.selection_range() {
                 if start != end {
@@ -585,7 +599,7 @@ impl Widget for TextInput {
                     let sx = base_x + s_px;
                     let ex = base_x + e_px;
                     out.push(DrawCommand::Rect {
-                        rect: Rect { x: sx, y: text_y, width: ex - sx, height: self.font_size },
+                        rect: Rect { x: sx, y: text_y + centering_offset, width: ex - sx, height: self.font_size },
                         color: Color { a: 0.3, ..self.theme.primary },
                         corner_radius: 2.0,
                     });
@@ -595,7 +609,7 @@ impl Widget for TextInput {
             // Draw cursor
             let cx = base_x + self.cursor_px;
             out.push(DrawCommand::Rect {
-                rect: Rect { x: cx, y: text_y, width: 2.0, height: self.font_size },
+                rect: Rect { x: cx, y: text_y + centering_offset, width: 2.0, height: self.font_size },
                 color: self.theme.primary, corner_radius: 0.0,
             });
         }
@@ -734,8 +748,9 @@ impl Widget for Checkbox {
 
         if !self.label_text.is_empty() {
             let tx = rect.x + box_size + self.theme.spacing;
-            let ty = rect.y + (rect.height - self.font_size) / 2.0;
+            let ty = rect.y + (rect.height / 2.0) - (self.font_size * 0.7);
             out.push(DrawCommand::Text {
+                id: self.node.id(), version: 0,
                 x: tx, y: ty, content: self.label_text.clone(),
                 size: self.font_size, color: self.theme.on_surface,
                 max_width: Some(rect.width - box_size - self.theme.spacing),
@@ -746,12 +761,18 @@ impl Widget for Checkbox {
     }
 }
 
-pub(crate) fn checkbox_style(label_len: usize, font_size: f32) -> Style {
+pub(crate) fn checkbox_style(tree: &ferrite_layout::LayoutTree, label: &str, font_size: f32) -> Style {
     let box_size = font_size * 1.2;
-    let label_w = if label_len > 0 { label_len as f32 * font_size * 0.62 + 8.0 } else { 0.0 };
+    let label_w = if !label.is_empty() {
+        let (w, _) = tree.measure_text(0, 0, label, font_size, None, true);
+        w + 8.0
+    } else {
+        0.0
+    };
+    let (_, h) = tree.measure_text(0, 0, "A", font_size, None, true);
     Style {
         width: Size::Px(box_size + label_w),
-        height: Size::Px(box_size.max(font_size * 1.4)),
+        height: Size::Px(box_size.max(h)),
         ..Default::default()
     }
 }
@@ -970,6 +991,7 @@ pub struct TextArea {
     pub(crate) last_cursor: usize,
     pub(crate) last_selection: Option<usize>,
     pub(crate) last_width: f32,
+    pub(crate) text_version: u64,
     pub(crate) undo_stack: Vec<TextEditState>,
     pub(crate) redo_stack: Vec<TextEditState>,
 }
@@ -1090,8 +1112,8 @@ impl TextArea {
         
         if cy < self.scroll_y {
             self.scroll_y = cy.max(0.0);
-        } else if cy + self.font_size * 1.4 > self.scroll_y + inner_h {
-            self.scroll_y = cy + self.font_size * 1.4 - inner_h + 2.0;
+        } else if cy + self.line_height > self.scroll_y + inner_h {
+            self.scroll_y = cy + self.line_height - inner_h + 2.0;
         }
         
         let max_scroll_x = (total_w - inner_w).max(0.0);
@@ -1141,14 +1163,21 @@ impl Widget for TextArea {
         if rel_x <= 0.0 {
             found_col = 0;
         } else {
-            let mut x_acc = 0.0f32;
-            for (i, ch) in line_str.chars().enumerate() {
-                let (cw, _) = tree.measure_text(&ch.to_string(), self.font_size, None);
-                if rel_x < x_acc + cw / 2.0 {
-                    found_col = i;
+            let mut prev_w = 0.0;
+            for (i, _) in line_str.char_indices() {
+                if i == 0 { continue; }
+                let (w, _) = tree.measure_text(0, 0, &line_str[..i], self.font_size, None, false);
+                if rel_x < prev_w + (w - prev_w) / 2.0 {
+                    found_col = line_str[..i].chars().count() - 1;
                     break;
                 }
-                x_acc += cw;
+                prev_w = w;
+            }
+            if found_col == line_len {
+                let (w, _) = tree.measure_text(0, 0, line_str, self.font_size, None, false);
+                if rel_x < prev_w + (w - prev_w) / 2.0 && found_col > 0 {
+                    found_col -= 1;
+                }
             }
         }
         
@@ -1198,15 +1227,26 @@ impl Widget for TextArea {
         if rel_x <= 0.0 {
             found_col = 0;
         } else {
-            let mut x_acc = 0.0f32;
-            for (i, ch) in line_str.chars().enumerate() {
-                let (cw, _) = tree.measure_text(&ch.to_string(), self.font_size, None);
-                if rel_x < x_acc + cw / 2.0 {
-                    found_col = i;
+            let mut prev_w = 0.0;
+            for (i, _) in line_str.char_indices() {
+                if i == 0 { continue; }
+                let (w, _) = tree.measure_text(0, 0, &line_str[..i], self.font_size, None, false);
+                if rel_x < prev_w + (w - prev_w) / 2.0 {
+                    found_col = line_str[..i].chars().count() - 1;
                     break;
                 }
-                x_acc += cw;
+                prev_w = w;
             }
+            if found_col == line_len {
+                let (w, _) = tree.measure_text(0, 0, line_str, self.font_size, None, false);
+                if rel_x < prev_w + (w - prev_w) / 2.0 && found_col > 0 {
+                    found_col -= 1;
+                }
+            }
+        }
+        
+        if found_col > 0 && found_col == line_len && line_str.ends_with('\n') {
+            found_col -= 1;
         }
         
         if found_col > 0 && found_col == line_len && line_str.ends_with('\n') {
@@ -1248,15 +1288,15 @@ impl Widget for TextArea {
         let pad = self.font_size * 0.5;
         let inner_w = r.width - 2.0 * pad;
         
-        let (_, lh) = tree.measure_text("A", self.font_size, None);
+        let (_, lh) = tree.measure_text(0, 0, "A", self.font_size, None, false);
         self.line_height = lh;
         
-        let (total_w, total_h) = tree.measure_text(&val, self.font_size, Some(inner_w));
+        let (total_w, total_h) = tree.measure_text(self.node.id(), self.text_version, &val, self.font_size, Some(inner_w), false);
         
-        let line_chars = tree.wrap_lines(&val, self.font_size, inner_w);
+        let line_chars = tree.wrap_lines(self.node.id(), self.text_version, &val, self.font_size, inner_w);
         self.line_chars = line_chars.clone();
         
-        let (cur_line, cur_col) = self.char_to_line_col(self.cursor);
+        let (cur_line, _cur_col) = self.char_to_line_col(self.cursor);
         
         let mut chars_skipped = 0;
         for (i, &lc) in line_chars.iter().enumerate() {
@@ -1268,14 +1308,14 @@ impl Widget for TextArea {
         let cursor_byte = val.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(val.len());
         let line_str_before_cursor = &val[byte_pos_start_of_line..cursor_byte];
         
-        let (w, _) = tree.measure_text(line_str_before_cursor, self.font_size, None);
+        let (w, _) = tree.measure_text(0, 0, line_str_before_cursor, self.font_size, None, false);
         self.cursor_px = w;
         let line_height = self.line_height;
         self.cursor_py = cur_line as f32 * line_height;
         
         // Similar for selection
         if let Some(s) = self.selection_start {
-            let (s_line, s_col) = self.char_to_line_col(s);
+            let (s_line, _s_col) = self.char_to_line_col(s);
             let mut s_skipped = 0;
             for (i, &lc) in line_chars.iter().enumerate() {
                 if i == s_line { break; }
@@ -1284,7 +1324,7 @@ impl Widget for TextArea {
             let s_byte_start = val.char_indices().nth(s_skipped).map(|(i,_)| i).unwrap_or(val.len());
             let s_byte = val.char_indices().nth(s).map(|(i,_)| i).unwrap_or(val.len());
             let s_str_before = &val[s_byte_start..s_byte];
-            let (sw, _) = tree.measure_text(s_str_before, self.font_size, None);
+            let (sw, _) = tree.measure_text(0, 0, s_str_before, self.font_size, None, false);
             
             self.selection_start_px = Some(sw);
             self.selection_start_py = Some(s_line as f32 * line_height);
@@ -1311,6 +1351,7 @@ impl Widget for TextArea {
                 if is_cmd && (*ch == 'a' || *ch == 'A') {
                     self.selection_start = Some(0);
                     self.cursor = char_count;
+                    self.layout_dirty = true;
                     request_repaint();
                     return true;
                 }
@@ -1444,7 +1485,7 @@ impl Widget for TextArea {
                 true 
             }
             KeyCode::Tab | KeyCode::Escape => false,
-            _ => false,
+
         }
     }
 
@@ -1491,16 +1532,17 @@ impl Widget for TextArea {
         let base_x = rect.x + pad - self.scroll_x;
         
         if val.is_empty() {
-            out.push(DrawCommand::Text { x: base_x, y: text_y, content: self.placeholder.clone(),
+            out.push(DrawCommand::Text { id: self.node.id(), version: self.text_version, x: base_x, y: text_y, content: self.placeholder.clone(),
                 size: self.font_size, color: self.theme.muted, max_width: Some(rect.width - 2.0 * pad), single_line: false, center: false });
         } else {
-            out.push(DrawCommand::Text { x: base_x, y: text_y, content: val,
+            out.push(DrawCommand::Text { id: self.node.id(), version: self.text_version, x: base_x, y: text_y, content: val,
                 size: self.font_size, color: self.theme.on_surface, max_width: Some(rect.width - 2.0 * pad), single_line: false, center: false });
         }
         
         
         if self.focused {
             let line_height = self.line_height;
+            let centering_offset = (line_height - self.font_size) / 2.0;
             // Draw multi-line selection box
             if let Some((start, end)) = self.selection_range() {
                 if start != end {
@@ -1526,13 +1568,13 @@ impl Widget for TextArea {
                         let sx = base_x + start_px.min(end_px);
                         let ex = base_x + start_px.max(end_px);
                         out.push(DrawCommand::Rect {
-                            rect: Rect { x: sx, y: text_y + start_py, width: ex - sx, height: self.font_size },
+                            rect: Rect { x: sx, y: text_y + start_py + centering_offset, width: ex - sx, height: self.font_size },
                             color: Color { a: 0.3, ..self.theme.primary }, corner_radius: 2.0,
                         });
                     } else { // Multiple lines
                         // 1. first line
                         out.push(DrawCommand::Rect {
-                            rect: Rect { x: base_x + start_px, y: text_y + start_py, width: inner_w - start_px, height: self.font_size },
+                            rect: Rect { x: base_x + start_px, y: text_y + start_py + centering_offset, width: inner_w - start_px, height: self.font_size },
                             color: Color { a: 0.3, ..self.theme.primary }, corner_radius: 2.0,
                         });
                         // 2. middle lines
@@ -1540,14 +1582,14 @@ impl Widget for TextArea {
                         if mid_lines > 0 {
                             for m in 0..mid_lines {
                                 out.push(DrawCommand::Rect {
-                                    rect: Rect { x: base_x, y: text_y + start_py + line_height * (m + 1) as f32, width: inner_w, height: self.font_size },
+                                    rect: Rect { x: base_x, y: text_y + start_py + line_height * (m + 1) as f32 + centering_offset, width: inner_w, height: self.font_size },
                                     color: Color { a: 0.3, ..self.theme.primary }, corner_radius: 2.0,
                                 });
                             }
                         }
                         // 3. last line
                         out.push(DrawCommand::Rect {
-                            rect: Rect { x: base_x, y: text_y + end_py, width: end_px, height: self.font_size },
+                            rect: Rect { x: base_x, y: text_y + end_py + centering_offset, width: end_px, height: self.font_size },
                             color: Color { a: 0.3, ..self.theme.primary }, corner_radius: 2.0,
                         });
                     }
@@ -1556,7 +1598,7 @@ impl Widget for TextArea {
             
             // Draw cursor
             let cx = base_x + self.cursor_px;
-            let cy = text_y + self.cursor_py;
+            let cy = text_y + self.cursor_py + centering_offset;
             out.push(DrawCommand::Rect {
                 rect: Rect { x: cx, y: cy, width: 2.0, height: self.font_size },
                 color: self.theme.primary, corner_radius: 0.0,

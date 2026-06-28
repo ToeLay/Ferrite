@@ -132,6 +132,8 @@ pub struct Style {
     pub direction: Direction,
     pub width: Size,
     pub height: Size,
+    pub min_width: Size,
+    pub min_height: Size,
     pub padding: Edges,
     pub margin: Edges,
     /// Gap between children along the main axis, in logical pixels.
@@ -158,6 +160,8 @@ impl Default for Style {
             direction: Direction::Column,
             width: Size::Auto,
             height: Size::Auto,
+            min_width: Size::Auto,
+            min_height: Size::Auto,
             padding: Edges::default(),
             margin: Edges::default(),
             gap: 0.0,
@@ -206,6 +210,7 @@ fn to_taffy_style(s: &Style) -> taffy::Style {
         },
         flex_direction: s.direction.into(),
         size: taffy::Size { width: s.width.into(), height: s.height.into() },
+        min_size: taffy::Size { width: s.min_width.into(), height: s.min_height.into() },
         padding: Rect {
             left: length(s.padding.left),
             right: length(s.padding.right),
@@ -252,7 +257,13 @@ pub struct Rect {
 /// Handle to a node in a [`LayoutTree`]. Just a thin wrapper around taffy's
 /// own id so the rest of Ferrite doesn't take a direct dependency on taffy's types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct NodeId(taffy::NodeId);
+pub struct NodeId(pub(crate) taffy::NodeId);
+
+impl NodeId {
+    pub fn id(&self) -> usize {
+        Into::<u64>::into(self.0) as usize
+    }
+}
 
 pub enum NodeKind {
     Text { content: Rc<RefCell<String>>, font_size: f32, single_line: bool },
@@ -261,8 +272,8 @@ pub enum NodeKind {
 /// Owns the flexbox tree and the cached result of the last `compute` call.
 pub struct LayoutTree {
     inner: TaffyTree<NodeKind>,
-    measure_fn: Option<Box<dyn Fn(&str, f32, Option<f32>) -> (f32, f32) + 'static>>,
-    wrap_lines_fn: Option<Box<dyn Fn(&str, f32, f32) -> Vec<usize> + 'static>>,
+    text_measure: Option<Box<dyn Fn(usize, u64, &str, f32, Option<f32>, bool) -> (f32, f32) + 'static>>,
+    wrap_lines_fn: Option<Box<dyn Fn(usize, u64, &str, f32, f32) -> Vec<usize> + 'static>>,
     hooks: Vec<Box<dyn Fn() -> Vec<(NodeId, Style)> + 'static>>,
 }
 
@@ -276,31 +287,31 @@ impl LayoutTree {
     pub fn new() -> Self {
         Self {
             inner: TaffyTree::new(),
-            measure_fn: None,
+            text_measure: None,
             wrap_lines_fn: None,
             hooks: Vec::new(),
         }
     }
 
-    pub fn set_text_measure(&mut self, f: impl Fn(&str, f32, Option<f32>) -> (f32, f32) + 'static) {
-        self.measure_fn = Some(Box::new(f));
+    pub fn set_text_measure(&mut self, f: impl Fn(usize, u64, &str, f32, Option<f32>, bool) -> (f32, f32) + 'static) {
+        self.text_measure = Some(Box::new(f));
     }
     
-    pub fn measure_text(&self, text: &str, font_size: f32, max_width: Option<f32>) -> (f32, f32) {
-        if let Some(f) = &self.measure_fn {
-            f(text, font_size, max_width)
+    pub fn measure_text(&self, id: usize, version: u64, text: &str, font_size: f32, max_width: Option<f32>, single_line: bool) -> (f32, f32) {
+        if let Some(f) = &self.text_measure {
+            f(id, version, text, font_size, max_width, single_line)
         } else {
             (text.chars().count() as f32 * font_size * 0.62, font_size * 1.4)
         }
     }
     
-    pub fn set_wrap_lines(&mut self, f: impl Fn(&str, f32, f32) -> Vec<usize> + 'static) {
+    pub fn set_wrap_lines(&mut self, f: impl Fn(usize, u64, &str, f32, f32) -> Vec<usize> + 'static) {
         self.wrap_lines_fn = Some(Box::new(f));
     }
     
-    pub fn wrap_lines(&self, text: &str, font_size: f32, max_width: f32) -> Vec<usize> {
+    pub fn wrap_lines(&self, id: usize, version: u64, text: &str, font_size: f32, max_width: f32) -> Vec<usize> {
         if let Some(f) = &self.wrap_lines_fn {
-            f(text, font_size, max_width)
+            f(id, version, text, font_size, max_width)
         } else {
             vec![text.chars().count()]
         }
@@ -362,17 +373,20 @@ impl LayoutTree {
             height: AvailableSpace::Definite(available_height),
         };
 
-        if let Some(ref measure) = self.measure_fn {
+        if let Some(ref measure) = self.text_measure {
             let measure_fn = measure.as_ref();
-            self.inner.compute_layout_with_measure(root.0, size, |known, available, _, ctx, _| {
+            self.inner.compute_layout_with_measure(root.0, size, |known, available, node_id, ctx, _| {
                 match ctx {
                     Some(NodeKind::Text { content, font_size, single_line }) => {
                         let max_w = if *single_line { None } else { known.width.or(available.width.into_option()) };
-                        let (w, mut h) = measure_fn(&content.borrow(), *font_size, max_w);
+                        // During taffy layout, we don't have a reliable version for NodeKind::Text.
+                        // We can just use the node_id and version 0. If it's static, version 0 is correct.
+                        // If it's dynamic, layout only happens when it changes anyway.
+                        let (w, mut h) = measure_fn(node_id.into(), 0, &content.borrow(), *font_size, max_w, *single_line);
                         if *single_line {
                             h = *font_size * 1.2;
                         }
-                        taffy::Size { width: w, height: h }
+                        taffy::Size { width: w.ceil(), height: h.ceil() }
                     }
                     _ => taffy::Size { width: 0.0, height: 0.0 },
                 }

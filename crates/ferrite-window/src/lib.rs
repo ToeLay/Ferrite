@@ -78,8 +78,12 @@ impl ApplicationHandler for Runner {
                 let logical_x = position.x / scale;
                 let logical_y = position.y / scale;
                 self.cursor_pos = (logical_x, logical_y);
-                self.app.set_hover_pos(Some((logical_x as f32, logical_y as f32)));
-                ferrite_core::request_repaint(); // Start hover detection
+                
+                let hover_changed = self.app.set_hover_pos(Some((logical_x as f32, logical_y as f32)));
+                if hover_changed {
+                    ferrite_core::request_repaint();
+                }
+                
                 if self.drag_active {
                     self.app.drag(self.cursor_pos.0 as f32, self.cursor_pos.1 as f32);
                 }

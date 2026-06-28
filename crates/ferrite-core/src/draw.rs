@@ -8,7 +8,10 @@ use ferrite_layout::Rect;
 #[derive(Clone, Debug, PartialEq)]
 pub enum DrawCommand {
     Rect { rect: Rect, color: Color, corner_radius: f32 },
+    StrokeRect { rect: Rect, color: Color, corner_radius: f32, stroke_width: f32 },
     Text {
+        id: usize,
+        version: u64,
         x: f32,
         y: f32,
         content: String,

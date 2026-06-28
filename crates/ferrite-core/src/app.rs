@@ -37,10 +37,15 @@ impl App {
     pub fn root_node_id(&self) -> NodeId { self.root.node_id() }
     pub fn root(&self) -> &dyn Widget { self.root.as_ref() }
 
-    pub fn set_text_measure(&mut self, f: impl Fn(&str, f32, Option<f32>) -> (f32, f32) + 'static) {
+    pub fn set_text_measure(&mut self, f: impl Fn(usize, u64, &str, f32, Option<f32>, bool) -> (f32, f32) + 'static) {
         self.tree.set_text_measure(f);
     }
-    pub fn set_hover_pos(&mut self, pos: Option<(f32, f32)>) {
+
+    pub fn set_wrap_lines(&mut self, f: impl Fn(usize, u64, &str, f32, f32) -> Vec<usize> + 'static) {
+        self.tree.set_wrap_lines(f);
+    }
+
+    pub fn set_hover_pos(&mut self, pos: Option<(f32, f32)>) -> bool {
         self.hover_pos = pos;
         
         let new_hover = pos.and_then(|(x, y)| {
@@ -57,7 +62,8 @@ impl App {
             found
         });
 
-        if new_hover.map(|(n, _)| n) != self.hovered_node {
+        let changed = new_hover.map(|(n, _)| n) != self.hovered_node;
+        if changed {
             if let Some(old) = self.hovered_node {
                 if let Some((_, sig)) = Self::find_signal_by_node(self.root.as_ref(), &self.tree, old, true).or_else(|| {
                     self.overlays.iter().find_map(|(_, o)| Self::find_signal_by_node(o.as_ref(), &self.tree, old, true))
@@ -72,6 +78,8 @@ impl App {
                 self.hovered_node = None;
             }
         }
+        
+        changed
     }
 
     fn find_hover_signal_at(w: &dyn Widget, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<(NodeId, ferrite_reactive::Signal<bool>)> {
@@ -133,7 +141,7 @@ impl App {
         // Tick animations (this might request repaint if animations are still running)
         ferrite_reactive::animation::tick_animations(dt);
 
-        let mut drain_overlays = |tree: &mut ferrite_layout::LayoutTree, overlays: &mut Vec<(crate::overlay::OverlayId, Box<dyn crate::Widget>)>| {
+        let drain_overlays = |tree: &mut ferrite_layout::LayoutTree, overlays: &mut Vec<(crate::overlay::OverlayId, Box<dyn crate::Widget>)>| {
             crate::overlay::PENDING_OVERLAYS.with(|o| {
                 for (id, view) in o.borrow_mut().drain(..) {
                     let widget = view.build(tree);
@@ -188,7 +196,7 @@ impl App {
             }
         }
         
-        if let Some((hit_text, hit_rect)) = hit {
+        if let Some((hit_text, _hit_rect)) = hit {
             if Some(&hit_text) != self.hovered_tooltip.as_ref() {
                 self.hovered_tooltip = Some(hit_text.clone());
                 self.hover_time = 0.0;
@@ -200,9 +208,11 @@ impl App {
                 // Draw tooltip directly
                 let padding = 8.0;
                 let text_size = 14.0;
-                let char_width = text_size * 0.6; // Approximation
-                let tt_width = hit_text.len() as f32 * char_width + padding * 2.0;
-                let tt_height = text_size + padding * 2.0;
+                
+                let (measured_w, measured_h) = self.tree.measure_text(0, 0, &hit_text, text_size, None, true);
+                
+                let tt_width = measured_w + padding * 2.0;
+                let tt_height = measured_h + padding * 1.5;
                 
                 // Position above cursor, or below if it hits top of screen
                 let (hx, hy) = self.hover_pos.unwrap();
@@ -219,12 +229,17 @@ impl App {
                     color: crate::Color::rgb(0.2, 0.2, 0.22),
                     corner_radius: 6.0,
                 });
+                
+                // Center text vertically
+                let text_y = ty + (tt_height - measured_h) / 2.0;
+                
                 out.push(crate::DrawCommand::Text {
+                    id: 0, version: 0,
                     x: tx + padding,
-                    y: ty + padding, // draw_text internally adds the baseline offset
-                    content: hit_text,
+                    y: text_y,
+                    content: hit_text.clone(),
                     size: text_size,
-                    color: crate::Color::rgb(1.0, 1.0, 1.0),
+                    color: crate::Color::WHITE,
                     max_width: None,
                     single_line: true,
                     center: false,
@@ -426,7 +441,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{view::*, widget::Widget};
+    use crate::view::{AnyView, col};
     use ferrite_reactive::*;
 
     #[test]

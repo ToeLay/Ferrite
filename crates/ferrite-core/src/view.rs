@@ -1,4 +1,4 @@
-use crate::widgets::{self, Container, Text, Button, TextInput, Spacer, Divider, Checkbox, Slider, Scroll};
+use crate::widgets::{self, Container, Text, TextInput, Spacer, Divider, Checkbox, Slider, Scroll};
 use crate::{request_repaint, Color, DrawCommand, Widget};
 use ferrite_layout::{AlignItems, Direction, Edges, JustifyContent, LayoutTree, NodeId, Rect, Size, Style};
 use ferrite_reactive::{create_effect, Signal};
@@ -468,7 +468,7 @@ impl crate::Widget for TrackHoverWidget {
 }
 
 impl ViewDescriptor for TrackHoverDescriptor {
-    fn build(mut self: Box<Self>, tree: &mut ferrite_layout::LayoutTree) -> Box<dyn crate::Widget> {
+    fn build(self: Box<Self>, tree: &mut ferrite_layout::LayoutTree) -> Box<dyn crate::Widget> {
         let scope = ferrite_reactive::Scope::new();
         let widget = scope.run(|| {
             let signal = ferrite_reactive::create_signal(false);
@@ -517,7 +517,7 @@ impl crate::Widget for TrackPressWidget {
 }
 
 impl ViewDescriptor for TrackPressDescriptor {
-    fn build(mut self: Box<Self>, tree: &mut ferrite_layout::LayoutTree) -> Box<dyn crate::Widget> {
+    fn build(self: Box<Self>, tree: &mut ferrite_layout::LayoutTree) -> Box<dyn crate::Widget> {
         let scope = ferrite_reactive::Scope::new();
         let widget = scope.run(|| {
             let signal = ferrite_reactive::create_signal(false);
@@ -640,7 +640,11 @@ impl ViewDescriptor for TextDescriptor {
     fn build(self: Box<Self>, tree: &mut LayoutTree) -> Box<dyn Widget> {
         let TextDescriptor { content, font_size, color, single_line, overrides } = *self;
         let mut style = Style::default();
+        if single_line {
+            style.min_width = ferrite_layout::Size::Px(0.0);
+        }
         overrides.apply_to(&mut style);
+        
         let content_rc = Rc::new(RefCell::new(content));
         let node = tree.new_text_leaf(style, content_rc.clone(), font_size, single_line);
         Box::new(Text {
@@ -649,6 +653,7 @@ impl ViewDescriptor for TextDescriptor {
             color,
             size: font_size,
             single_line,
+            version: std::rc::Rc::new(std::cell::Cell::new(0)),
         })
     }
     fn style_overrides_mut(&mut self) -> &mut StyleOverrides { &mut self.overrides }
@@ -691,11 +696,14 @@ impl ViewDescriptor for LabelDescriptor {
             let content = Rc::new(RefCell::new(initial));
             let node = tree.new_text_leaf(style, content.clone(), font_size, single_line);
             let c2 = content.clone();
+            let version = std::rc::Rc::new(std::cell::Cell::new(0));
+            let v2 = version.clone();
             create_effect(move || { 
                 *c2.borrow_mut() = compute(); 
+                v2.set(v2.get() + 1);
                 crate::dirty::request_layout(node); 
             });
-            Box::new(Text { node, content, color, size: font_size, single_line }) as Box<dyn Widget>
+            Box::new(Text { node, content, color, size: font_size, single_line, version }) as Box<dyn Widget>
         });
         Box::new(ScopedWidget { inner: widget, scope: Some(scope) })
     }
@@ -808,6 +816,7 @@ impl ViewDescriptor for InputDescriptor {
             font_size, width: input_width, theme,
             layout_dirty: true, last_val: String::new(),
             last_cursor: 0, last_selection: None, last_width: 0.0,
+            text_version: 0,
             undo_stack: Vec::new(), redo_stack: Vec::new(),
         })
     }
@@ -857,6 +866,7 @@ impl ViewDescriptor for TextAreaDescriptor {
             font_size, theme,
             layout_dirty: true, last_val: String::new(),
             last_cursor: 0, last_selection: None, last_width: 0.0,
+            text_version: 0,
             undo_stack: Vec::new(), redo_stack: Vec::new(),
         })
     }
@@ -999,7 +1009,7 @@ impl ViewDescriptor for CheckboxDescriptor {
         let scope = ferrite_reactive::Scope::new();
         let widget = scope.run(|| {
             let CheckboxDescriptor { label, checked, font_size, overrides } = *self;
-            let mut style = widgets::checkbox_style(label.len(), font_size);
+            let mut style = widgets::checkbox_style(tree, &label, font_size);
             overrides.apply_to(&mut style);
             let node = tree.new_leaf(style);
             let theme = crate::context::try_inject::<Theme>().unwrap_or_default();
@@ -1356,10 +1366,10 @@ impl<T: Clone + 'static> Widget for ListWidget<T> {
 
 // ── Modal (High-level Portal) ──────────────────────────────────────────────────
 
-pub fn modal(show: ferrite_reactive::Signal<bool>, mut on_close: impl FnMut() + Clone + 'static, content: impl Fn() -> AnyView + 'static) -> AnyView {
+pub fn modal(show: ferrite_reactive::Signal<bool>, on_close: impl FnMut() + Clone + 'static, content: impl Fn() -> AnyView + 'static) -> AnyView {
     let content = std::rc::Rc::new(content);
     portal(show.clone(), move || {
-        let mut close = on_close.clone();
+        let _close = on_close.clone();
         let content = content.clone();
         
         let background = col([
@@ -1389,7 +1399,7 @@ pub fn dropdown(
     label: &str,
     width: f32,
     items: Vec<String>,
-    mut on_select: impl FnMut(usize, String) + Clone + 'static,
+    on_select: impl FnMut(usize, String) + Clone + 'static,
 ) -> AnyView {
     let show = ferrite_reactive::create_signal(false);
     let anchor = Anchor::new();
@@ -1408,7 +1418,7 @@ pub fn dropdown(
     let portal_view = portal(show.clone(), move || {
         let anchor_rect = anchor.get().unwrap_or_default();
         let items_clone = items_rc.clone();
-        let mut on_select_clone = on_select.clone();
+        let on_select_clone = on_select.clone();
         let show_dropdown = show.clone();
         
         let mut children = Vec::new();
@@ -1428,8 +1438,9 @@ pub fn dropdown(
                         .width(width - 16.0)
                 ])
                 .align(AlignItems::Center)
-                .padding(8.0)
+                .padding_xy(8.0, 0.0)
                 .width(width)
+                .height(36.0)
                 .on_click(move || {
                     select_cb(i, item_clone.clone());
                     show_cb.set(false);
@@ -1445,7 +1456,7 @@ pub fn dropdown(
                 .width(width + 2.0)
                 .position_type(ferrite_layout::PositionType::Absolute)
                 .inset(ferrite_layout::Inset {
-                    top: ferrite_layout::Size::Px(anchor_rect.y + anchor_rect.height + 6.0),
+                    top: ferrite_layout::Size::Px(anchor_rect.y + anchor_rect.height + 2.0),
                     left: ferrite_layout::Size::Px(anchor_rect.x),
                     right: ferrite_layout::Size::Auto,
                     bottom: ferrite_layout::Size::Auto,

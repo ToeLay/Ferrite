@@ -1,4 +1,4 @@
-use crate::view::{AnyView, col, text};
+use crate::view::{AnyView, col};
 use ferrite_layout::{PositionType, Size, Inset, AlignItems};
 use ferrite_reactive::{create_signal, Signal, SignalVecExt};
 
