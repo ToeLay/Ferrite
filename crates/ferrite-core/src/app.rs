@@ -44,6 +44,14 @@ impl App {
     pub fn set_wrap_lines(&mut self, f: impl Fn(usize, u64, &str, f32, f32) -> Vec<usize> + 'static) {
         self.tree.set_wrap_lines(f);
     }
+    
+    pub fn set_char_at_x(&mut self, f: impl Fn(usize, u64, &str, f32, f32, usize, bool) -> usize + 'static) {
+        self.tree.set_char_at_x(f);
+    }
+
+    pub fn set_char_x_at_index(&mut self, f: impl Fn(usize, u64, &str, f32, usize, usize, bool) -> f32 + 'static) {
+        self.tree.set_char_x_at_index(f);
+    }
 
     pub fn set_hover_pos(&mut self, pos: Option<(f32, f32)>) -> bool {
         self.hover_pos = pos;

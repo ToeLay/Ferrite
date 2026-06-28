@@ -159,6 +159,39 @@ pub fn wrap_lines_fn() -> impl Fn(usize, u64, &str, f32, f32) -> Vec<usize> {
     }
 }
 
+pub fn char_at_x_fn() -> impl Fn(usize, u64, &str, f32, f32, usize, bool) -> usize {
+    |id, version, text, size, target_x, line_idx, single_line| {
+        with_buffer(id, version, text, size, None, single_line, |buffer| {
+            if let Some(run) = buffer.layout_runs().nth(line_idx) {
+                for (glyph_idx, glyph) in run.glyphs.iter().enumerate() {
+                    if target_x < glyph.x + glyph.w / 2.0 {
+                        return glyph_idx;
+                    }
+                }
+                return run.glyphs.len(); // after last glyph on this run
+            }
+            0
+        })
+    }
+}
+
+pub fn char_x_at_index_fn() -> impl Fn(usize, u64, &str, f32, usize, usize, bool) -> f32 {
+    |id, version, text, size, char_idx, line_idx, single_line| {
+        with_buffer(id, version, text, size, None, single_line, |buffer| {
+            if let Some(run) = buffer.layout_runs().nth(line_idx) {
+                if char_idx >= run.glyphs.len() {
+                    if let Some(last) = run.glyphs.last() {
+                        return last.x + last.w;
+                    }
+                    return 0.0;
+                }
+                return run.glyphs[char_idx].x;
+            }
+            0.0
+        })
+    }
+}
+
 pub fn render_to_pixmap(commands: &[DrawCommand], width: u32, height: u32, scale: f32, background: FColor) -> Pixmap {
     let mut pixmap = Pixmap::new(width.max(1), height.max(1)).expect("non-zero pixmap size");
     pixmap.fill(to_skia_color(background));

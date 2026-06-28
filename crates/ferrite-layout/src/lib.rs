@@ -274,6 +274,8 @@ pub struct LayoutTree {
     inner: TaffyTree<NodeKind>,
     text_measure: Option<Box<dyn Fn(usize, u64, &str, f32, Option<f32>, bool) -> (f32, f32) + 'static>>,
     wrap_lines_fn: Option<Box<dyn Fn(usize, u64, &str, f32, f32) -> Vec<usize> + 'static>>,
+    char_at_x_fn: Option<Box<dyn Fn(usize, u64, &str, f32, f32, usize, bool) -> usize + 'static>>,
+    char_x_at_index_fn: Option<Box<dyn Fn(usize, u64, &str, f32, usize, usize, bool) -> f32 + 'static>>,
     hooks: Vec<Box<dyn Fn() -> Vec<(NodeId, Style)> + 'static>>,
 }
 
@@ -289,6 +291,8 @@ impl LayoutTree {
             inner: TaffyTree::new(),
             text_measure: None,
             wrap_lines_fn: None,
+            char_at_x_fn: None,
+            char_x_at_index_fn: None,
             hooks: Vec::new(),
         }
     }
@@ -314,6 +318,33 @@ impl LayoutTree {
             f(id, version, text, font_size, max_width)
         } else {
             vec![text.chars().count()]
+        }
+    }
+    
+    pub fn set_char_at_x(&mut self, f: impl Fn(usize, u64, &str, f32, f32, usize, bool) -> usize + 'static) {
+        self.char_at_x_fn = Some(Box::new(f));
+    }
+    
+    pub fn char_at_x(&self, id: usize, version: u64, text: &str, font_size: f32, x: f32, line_idx: usize, single_line: bool) -> usize {
+        if let Some(f) = &self.char_at_x_fn {
+            f(id, version, text, font_size, x, line_idx, single_line)
+        } else {
+            let char_w = font_size * 0.62;
+            let idx = (x / char_w).round() as usize;
+            idx.min(text.chars().count())
+        }
+    }
+    
+    pub fn set_char_x_at_index(&mut self, f: impl Fn(usize, u64, &str, f32, usize, usize, bool) -> f32 + 'static) {
+        self.char_x_at_index_fn = Some(Box::new(f));
+    }
+    
+    pub fn char_x_at_index(&self, id: usize, version: u64, text: &str, font_size: f32, char_idx: usize, line_idx: usize, single_line: bool) -> f32 {
+        if let Some(f) = &self.char_x_at_index_fn {
+            f(id, version, text, font_size, char_idx, line_idx, single_line)
+        } else {
+            let char_w = font_size * 0.62;
+            (char_idx as f32) * char_w
         }
     }
 

@@ -241,6 +241,9 @@ fn map_key(key: &Key, mods: winit::keyboard::ModifiersState) -> Option<KeyEvent>
 pub fn run(config: WindowConfig, mut app: App) {
     clipboard::init_clipboard();
     app.set_text_measure(ferrite_render_skia::text_measure_fn());
+    app.set_wrap_lines(ferrite_render_skia::wrap_lines_fn());
+    app.set_char_at_x(ferrite_render_skia::char_at_x_fn());
+    app.set_char_x_at_index(ferrite_render_skia::char_x_at_index_fn());
     let event_loop = EventLoop::new().expect("create event loop");
     event_loop.set_control_flow(ControlFlow::Wait);
     let context = Context::new(event_loop.owned_display_handle()).expect("create softbuffer context");

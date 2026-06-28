@@ -313,28 +313,13 @@ impl Widget for TextInput {
         let pad = self.font_size * 0.5;
         let rel_x = px - (ax + pad) + self.scroll_x;
         let val = self.value.get();
-        let mut found_idx = val.chars().count();
+        let found_idx;
         let mut _current_px = 0.0;
         
         if rel_x <= 0.0 {
             found_idx = 0;
         } else {
-            let mut prev_w = 0.0;
-            for (i, _) in val.char_indices() {
-                if i == 0 { continue; }
-                let (w, _) = tree.measure_text(0, 0, &val[..i], self.font_size, None, true);
-                if rel_x < prev_w + (w - prev_w) / 2.0 {
-                    found_idx = val[..i].chars().count() - 1;
-                    break;
-                }
-                prev_w = w;
-            }
-            if found_idx == val.chars().count() {
-                let (w, _) = tree.measure_text(self.node.id(), self.text_version, &val, self.font_size, None, true);
-                if rel_x < prev_w + (w - prev_w) / 2.0 && found_idx > 0 {
-                    found_idx -= 1;
-                }
-            }
+            found_idx = tree.char_at_x(self.node.id(), self.text_version, &val, self.font_size, rel_x, 0, true);
         }
         
         self.cursor = found_idx;
@@ -353,27 +338,12 @@ impl Widget for TextInput {
         let pad = self.font_size * 0.5;
         let rel_x = px - (ax + pad) + self.scroll_x;
         let val = self.value.get();
-        let mut found_idx = val.chars().count();
+        let found_idx;
         
         if rel_x <= 0.0 {
             found_idx = 0;
         } else {
-            let mut prev_w = 0.0;
-            for (i, _) in val.char_indices() {
-                if i == 0 { continue; }
-                let (w, _) = tree.measure_text(0, 0, &val[..i], self.font_size, None, true);
-                if rel_x < prev_w + (w - prev_w) / 2.0 {
-                    found_idx = val[..i].chars().count() - 1;
-                    break;
-                }
-                prev_w = w;
-            }
-            if found_idx == val.chars().count() {
-                let (w, _) = tree.measure_text(self.node.id(), self.text_version, &val, self.font_size, None, true);
-                if rel_x < prev_w + (w - prev_w) / 2.0 && found_idx > 0 {
-                    found_idx -= 1;
-                }
-            }
+            found_idx = tree.char_at_x(self.node.id(), self.text_version, &val, self.font_size, rel_x, 0, true);
         }
         
         if self.cursor != found_idx {
@@ -408,16 +378,10 @@ impl Widget for TextInput {
         }
         
         // Compute pixel offsets precisely using fontdue
-        let byte_pos = val.char_indices().nth(self.cursor).map(|(i, _)| i).unwrap_or(val.len());
-        let s = &val[..byte_pos];
-        let (w, _) = tree.measure_text(0, 0, s, self.font_size, None, true);
-        self.cursor_px = w;
+        self.cursor_px = tree.char_x_at_index(self.node.id(), self.text_version, &val, self.font_size, self.cursor, 0, true);
         
         if let Some(s_start) = self.selection_start {
-            let s_byte = val.char_indices().nth(s_start).map(|(i, _)| i).unwrap_or(val.len());
-            let s_str = &val[..s_byte];
-            let (sw, _) = tree.measure_text(0, 0, s_str, self.font_size, None, true);
-            self.selection_start_px = Some(sw);
+            self.selection_start_px = Some(tree.char_x_at_index(self.node.id(), self.text_version, &val, self.font_size, s_start, 0, true));
         } else {
             self.selection_start_px = None;
         }
@@ -1158,27 +1122,13 @@ impl Widget for TextArea {
         let byte_end = val.char_indices().nth(chars_skipped + line_len).map(|(i,_)| i).unwrap_or(val.len());
         
         let line_str = &val[byte_start..byte_end];
-        let mut found_col = line_len;
+        let mut found_col;
         
         if rel_x <= 0.0 {
             found_col = 0;
         } else {
-            let mut prev_w = 0.0;
-            for (i, _) in line_str.char_indices() {
-                if i == 0 { continue; }
-                let (w, _) = tree.measure_text(0, 0, &line_str[..i], self.font_size, None, false);
-                if rel_x < prev_w + (w - prev_w) / 2.0 {
-                    found_col = line_str[..i].chars().count() - 1;
-                    break;
-                }
-                prev_w = w;
-            }
-            if found_col == line_len {
-                let (w, _) = tree.measure_text(0, 0, line_str, self.font_size, None, false);
-                if rel_x < prev_w + (w - prev_w) / 2.0 && found_col > 0 {
-                    found_col -= 1;
-                }
-            }
+            found_col = tree.char_at_x(self.node.id(), self.text_version, &val, self.font_size, rel_x, target_line, false);
+            if found_col > line_len { found_col = line_len; }
         }
         
         // Exclude the trailing \n from being clickable directly at the end
@@ -1222,31 +1172,13 @@ impl Widget for TextArea {
         let byte_end = val.char_indices().nth(chars_skipped + line_len).map(|(i,_)| i).unwrap_or(val.len());
         
         let line_str = &val[byte_start..byte_end];
-        let mut found_col = line_len;
+        let mut found_col;
         
         if rel_x <= 0.0 {
             found_col = 0;
         } else {
-            let mut prev_w = 0.0;
-            for (i, _) in line_str.char_indices() {
-                if i == 0 { continue; }
-                let (w, _) = tree.measure_text(0, 0, &line_str[..i], self.font_size, None, false);
-                if rel_x < prev_w + (w - prev_w) / 2.0 {
-                    found_col = line_str[..i].chars().count() - 1;
-                    break;
-                }
-                prev_w = w;
-            }
-            if found_col == line_len {
-                let (w, _) = tree.measure_text(0, 0, line_str, self.font_size, None, false);
-                if rel_x < prev_w + (w - prev_w) / 2.0 && found_col > 0 {
-                    found_col -= 1;
-                }
-            }
-        }
-        
-        if found_col > 0 && found_col == line_len && line_str.ends_with('\n') {
-            found_col -= 1;
+            found_col = tree.char_at_x(self.node.id(), self.text_version, &val, self.font_size, rel_x, target_line, false);
+            if found_col > line_len { found_col = line_len; }
         }
         
         if found_col > 0 && found_col == line_len && line_str.ends_with('\n') {
@@ -1296,37 +1228,17 @@ impl Widget for TextArea {
         let line_chars = tree.wrap_lines(self.node.id(), self.text_version, &val, self.font_size, inner_w);
         self.line_chars = line_chars.clone();
         
-        let (cur_line, _cur_col) = self.char_to_line_col(self.cursor);
+        let (cur_line, cur_col) = self.char_to_line_col(self.cursor);
         
-        let mut chars_skipped = 0;
-        for (i, &lc) in line_chars.iter().enumerate() {
-            if i == cur_line { break; }
-            chars_skipped += lc;
-        }
-        let byte_pos_start_of_line = val.char_indices().nth(chars_skipped).map(|(i,_)| i).unwrap_or(val.len());
-        
-        let cursor_byte = val.char_indices().nth(self.cursor).map(|(i,_)| i).unwrap_or(val.len());
-        let line_str_before_cursor = &val[byte_pos_start_of_line..cursor_byte];
-        
-        let (w, _) = tree.measure_text(0, 0, line_str_before_cursor, self.font_size, None, false);
-        self.cursor_px = w;
+        self.cursor_px = tree.char_x_at_index(self.node.id(), self.text_version, &val, self.font_size, cur_col, cur_line, false);
         let line_height = self.line_height;
         self.cursor_py = cur_line as f32 * line_height;
         
         // Similar for selection
         if let Some(s) = self.selection_start {
-            let (s_line, _s_col) = self.char_to_line_col(s);
-            let mut s_skipped = 0;
-            for (i, &lc) in line_chars.iter().enumerate() {
-                if i == s_line { break; }
-                s_skipped += lc;
-            }
-            let s_byte_start = val.char_indices().nth(s_skipped).map(|(i,_)| i).unwrap_or(val.len());
-            let s_byte = val.char_indices().nth(s).map(|(i,_)| i).unwrap_or(val.len());
-            let s_str_before = &val[s_byte_start..s_byte];
-            let (sw, _) = tree.measure_text(0, 0, s_str_before, self.font_size, None, false);
+            let (s_line, s_col) = self.char_to_line_col(s);
             
-            self.selection_start_px = Some(sw);
+            self.selection_start_px = Some(tree.char_x_at_index(self.node.id(), self.text_version, &val, self.font_size, s_col, s_line, false));
             self.selection_start_py = Some(s_line as f32 * line_height);
         } else {
             self.selection_start_px = None;
