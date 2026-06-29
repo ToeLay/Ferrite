@@ -53,7 +53,7 @@ impl App {
         self.tree.set_char_x_at_index(f);
     }
 
-    pub fn set_hover_pos(&mut self, pos: Option<(f32, f32)>) -> bool {
+    pub fn set_hover_pos(&mut self, pos: Option<(f32, f32)>) -> (bool, Option<crate::CursorIcon>) {
         self.hover_pos = pos;
         
         let new_hover = pos.and_then(|(x, y)| {
@@ -87,7 +87,26 @@ impl App {
             }
         }
         
-        changed
+        let icon = pos.and_then(|(x, y)| {
+            for (_, overlay) in self.overlays.iter().rev() {
+                if let Some(i) = Self::find_cursor_icon_at(overlay.as_ref(), &self.tree, 0.0, 0.0, x, y) {
+                    return Some(i);
+                }
+            }
+            Self::find_cursor_icon_at(self.root.as_ref(), &self.tree, 0.0, 0.0, x, y)
+        });
+        
+        (changed, icon)
+    }
+
+    fn find_cursor_icon_at(w: &dyn Widget, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<crate::CursorIcon> {
+        let r = tree.layout(w.node_id());
+        let ax = ox + r.x; let ay = oy + r.y;
+        if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return None; }
+        for child in w.children().iter().rev() {
+            if let Some(icon) = Self::find_cursor_icon_at(child.as_ref(), tree, ax, ay, px, py) { return Some(icon); }
+        }
+        w.cursor_icon()
     }
 
     fn find_hover_signal_at(w: &dyn Widget, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<(NodeId, ferrite_reactive::Signal<bool>)> {

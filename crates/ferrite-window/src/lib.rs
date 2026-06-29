@@ -79,7 +79,16 @@ impl ApplicationHandler for Runner {
                 let logical_y = position.y / scale;
                 self.cursor_pos = (logical_x, logical_y);
                 
-                let hover_changed = self.app.set_hover_pos(Some((logical_x as f32, logical_y as f32)));
+                let (hover_changed, icon) = self.app.set_hover_pos(Some((logical_x as f32, logical_y as f32)));
+                if let Some(w) = &self.window {
+                    let winit_icon = match icon.unwrap_or(ferrite_core::CursorIcon::Default) {
+                        ferrite_core::CursorIcon::Default => winit::window::CursorIcon::Default,
+                        ferrite_core::CursorIcon::Pointer => winit::window::CursorIcon::Pointer,
+                        ferrite_core::CursorIcon::Text => winit::window::CursorIcon::Text,
+                        ferrite_core::CursorIcon::EwResize => winit::window::CursorIcon::EwResize,
+                    };
+                    w.set_cursor(winit_icon);
+                }
                 if hover_changed {
                     ferrite_core::request_repaint();
                 }
@@ -170,8 +179,11 @@ impl ApplicationHandler for Runner {
 
             WindowEvent::RedrawRequested => self.redraw(),
             WindowEvent::CursorLeft { .. } => {
-                self.app.set_hover_pos(None);
-                ferrite_core::request_repaint();
+                let (changed, _) = self.app.set_hover_pos(None);
+                if let Some(w) = &self.window {
+                    w.set_cursor(winit::window::CursorIcon::Default);
+                }
+                if changed { ferrite_core::request_repaint(); }
             }
 
             _ => {}

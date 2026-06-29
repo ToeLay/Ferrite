@@ -28,3 +28,12 @@ pub struct KeyEvent {
     pub key: KeyCode,
     pub modifiers: Modifiers,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum CursorIcon {
+    #[default]
+    Default,
+    Pointer,
+    Text,
+    EwResize,
+}

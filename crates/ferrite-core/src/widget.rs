@@ -30,6 +30,9 @@ pub trait Widget {
     /// Optional tooltip text to display when the widget is hovered.
     fn tooltip(&self) -> Option<&str> { None }
 
+    /// Optional cursor icon to display when the widget is hovered.
+    fn cursor_icon(&self) -> Option<crate::CursorIcon> { None }
+
     /// Optional signal to track hover state.
     fn hover_signal(&self) -> Option<ferrite_reactive::Signal<bool>> { None }
 

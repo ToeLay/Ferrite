@@ -107,6 +107,7 @@ impl Button {
     pub fn foreground(mut self, c: Color) -> Self { self.foreground = c; self }
 }
 impl Widget for Button {
+    fn cursor_icon(&self) -> Option<crate::CursorIcon> { Some(crate::CursorIcon::Pointer) }
     fn node_id(&self) -> NodeId { self.node }
     fn is_focusable(&self) -> bool { true }
     fn on_focus_change(&mut self, focused: bool) {
@@ -302,6 +303,7 @@ impl TextInput {
 }
 
 impl Widget for TextInput {
+    fn cursor_icon(&self) -> Option<crate::CursorIcon> { Some(crate::CursorIcon::Text) }
     fn node_id(&self) -> NodeId { self.node }
     fn is_focusable(&self) -> bool { true }
     
@@ -750,6 +752,7 @@ pub struct Slider {
 }
 
 impl Widget for Slider {
+    fn cursor_icon(&self) -> Option<crate::CursorIcon> { Some(crate::CursorIcon::EwResize) }
     fn node_id(&self) -> NodeId { self.node }
 
     fn click_at(&mut self, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> Option<NodeId> {
@@ -1090,6 +1093,7 @@ impl TextArea {
 }
 
 impl Widget for TextArea {
+    fn cursor_icon(&self) -> Option<crate::CursorIcon> { Some(crate::CursorIcon::Text) }
     fn node_id(&self) -> NodeId { self.node }
     fn is_focusable(&self) -> bool { true }
     
