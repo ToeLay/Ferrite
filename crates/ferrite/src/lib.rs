@@ -10,8 +10,9 @@ pub use ferrite_reactive::{use_spring, use_tween, SpringConfig};
 
 // New declarative API
 pub use ferrite_core::{AnyView, View, ViewIteratorExt};
-pub use ferrite_core::{text, label, button, input, textarea, col, row, spacer, divider, checkbox, slider, switch, scroll, list, portal, modal, dropdown, Anchor};
+pub use ferrite_core::{text, label, button, input, textarea, col, row, spacer, divider, checkbox, slider, switch, scroll, list, portal, modal, dropdown, Anchor, image};
 pub use ferrite_core::{provide, inject, reset_context, Theme};
+pub use ferrite_core::{ImageData, ObjectFit};
 pub use ferrite_core::{toast, toaster};
 
 // Alias create_signal to use_state for component-local state idiom
@@ -71,8 +72,8 @@ pub fn run_with(config: ferrite_window::WindowConfig, root: impl View) {
 pub mod prelude {
     // Declarative API (primary)
     pub use crate::{
-        text, label, button, input, textarea, col, row, spacer, divider, checkbox, slider, switch, scroll, list, portal, modal, dropdown, Anchor,
-        AnyView, View, ViewIteratorExt, Theme,
+        text, label, button, input, textarea, col, row, spacer, divider, checkbox, slider, switch, scroll, list, portal, modal, dropdown, Anchor, image,
+        AnyView, View, ViewIteratorExt, Theme, ImageData, ObjectFit,
         provide, inject, reset_context, use_state,
         toast,
         run, run_with,

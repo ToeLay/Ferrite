@@ -242,6 +242,72 @@ pub fn render_to_pixmap(commands: &[DrawCommand], width: u32, height: u32, scale
                 let mask = if mask_active && corner_radius > 0.0 { Some(&clip_mask) } else { None };
                 draw_rect(&mut pixmap, draw_r, *color, corner_radius, mask)
             }
+            DrawCommand::Image { rect, image_data, image_width, image_height, corner_radius, object_fit } => {
+                let rect = FRect { x: rect.x * scale, y: rect.y * scale, width: rect.width * scale, height: rect.height * scale };
+                if let Some(c) = active_clip {
+                    if rect.x > c.x + c.width || rect.y > c.y + c.height || rect.x + rect.width < c.x || rect.y + rect.height < c.y {
+                        continue;
+                    }
+                }
+                
+                if let Some(src_pixmap) = tiny_skia::PixmapRef::from_bytes(image_data, *image_width, *image_height) {
+                    let img_w = *image_width as f32;
+                    let img_h = *image_height as f32;
+                    let rect_w = rect.width;
+                    let rect_h = rect.height;
+
+                    let (scale_x, scale_y, offset_x, offset_y) = match object_fit {
+                        ferrite_core::ObjectFit::Fill => {
+                            (rect_w / img_w, rect_h / img_h, 0.0, 0.0)
+                        }
+                        ferrite_core::ObjectFit::Contain => {
+                            let scale_factor = (rect_w / img_w).min(rect_h / img_h);
+                            let sw = img_w * scale_factor;
+                            let sh = img_h * scale_factor;
+                            (scale_factor, scale_factor, (rect_w - sw) / 2.0, (rect_h - sh) / 2.0)
+                        }
+                        ferrite_core::ObjectFit::Cover => {
+                            let scale_factor = (rect_w / img_w).max(rect_h / img_h);
+                            let sw = img_w * scale_factor;
+                            let sh = img_h * scale_factor;
+                            (scale_factor, scale_factor, (rect_w - sw) / 2.0, (rect_h - sh) / 2.0)
+                        }
+                        ferrite_core::ObjectFit::ScaleDown => {
+                            let scale_factor = (rect_w / img_w).min(rect_h / img_h).min(1.0);
+                            let sw = img_w * scale_factor;
+                            let sh = img_h * scale_factor;
+                            (scale_factor, scale_factor, (rect_w - sw) / 2.0, (rect_h - sh) / 2.0)
+                        }
+                    };
+
+                    let transform = tiny_skia::Transform::from_scale(scale_x, scale_y)
+                        .post_translate(rect.x + offset_x, rect.y + offset_y);
+                    
+                    let pattern = tiny_skia::Pattern::new(
+                        src_pixmap,
+                        tiny_skia::SpreadMode::Pad,
+                        tiny_skia::FilterQuality::Bilinear,
+                        1.0,
+                        transform,
+                    );
+                    
+                    let mut paint = tiny_skia::Paint::default();
+                    paint.shader = pattern;
+                    
+                    let mask = if mask_active && *corner_radius > 0.0 { Some(&clip_mask) } else { None };
+                    
+                    let corner_radius = *corner_radius * scale;
+                    if corner_radius > 0.0 {
+                        if let Some(path) = rounded_rect_path(rect, corner_radius.min(rect.width / 2.0).min(rect.height / 2.0)) {
+                            pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, tiny_skia::Transform::identity(), mask);
+                        }
+                    } else {
+                        if let Some(sk_rect) = SkRect::from_xywh(rect.x, rect.y, rect.width, rect.height) {
+                            pixmap.fill_rect(sk_rect, &paint, tiny_skia::Transform::identity(), mask);
+                        }
+                    }
+                }
+            }
             DrawCommand::Text { id, version, x, y, content, size, color, max_width, single_line, center } => {
                 let logical_x = *x;
                 let logical_y = *y;

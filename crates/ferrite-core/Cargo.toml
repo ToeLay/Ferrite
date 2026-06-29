@@ -8,3 +8,4 @@ description = "Widget tree, draw commands, and event dispatch for Ferrite. Backe
 [dependencies]
 ferrite-reactive = { workspace = true }
 ferrite-layout = { workspace = true }
+image = { workspace = true }

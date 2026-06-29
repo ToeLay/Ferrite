@@ -1607,3 +1607,34 @@ impl Drop for PortalWidget {
         }
     }
 }
+
+// ── Image ────────────────────────────────────────────────────────────────────
+
+pub struct ImageWidget {
+    pub(crate) node: NodeId,
+    pub(crate) data: crate::image::ImageData,
+    pub(crate) corner_radius: f32,
+    pub(crate) clip: bool,
+    pub(crate) object_fit: crate::image::ObjectFit,
+}
+
+impl ImageWidget {
+    pub fn corner_radius(mut self, radius: f32) -> Self { self.corner_radius = radius; self }
+    pub fn clip(mut self, clip: bool) -> Self { self.clip = clip; self }
+    pub fn object_fit(mut self, fit: crate::image::ObjectFit) -> Self { self.object_fit = fit; self }
+}
+
+impl Widget for ImageWidget {
+    fn node_id(&self) -> NodeId { self.node }
+    fn paint_self(&self, rect: Rect, out: &mut Vec<DrawCommand>) {
+        out.push(DrawCommand::Image {
+            rect,
+            image_data: self.data.pixels.clone(),
+            image_width: self.data.width,
+            image_height: self.data.height,
+            corner_radius: self.corner_radius,
+            object_fit: self.object_fit,
+        });
+    }
+}
+

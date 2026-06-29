@@ -21,6 +21,14 @@ pub enum DrawCommand {
         single_line: bool,
         center: bool,
     },
+    Image {
+        rect: Rect,
+        image_data: std::sync::Arc<[u8]>,
+        image_width: u32,
+        image_height: u32,
+        corner_radius: f32,
+        object_fit: crate::image::ObjectFit,
+    },
     PushClip { rect: Rect },
     PopClip,
     TooltipRegion {

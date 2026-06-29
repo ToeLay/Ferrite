@@ -1,4 +1,4 @@
-use crate::widgets::{self, Container, Text, TextInput, Spacer, Divider, Checkbox, Slider, Scroll};
+use crate::widgets::{self, Container, Text, TextInput, Spacer, Divider, Checkbox, Slider, Scroll, ImageWidget};
 use crate::{request_repaint, Color, DrawCommand, Widget};
 use ferrite_layout::{AlignItems, Direction, Edges, JustifyContent, LayoutTree, NodeId, Rect, Size, Style};
 use ferrite_reactive::{create_effect, Signal};
@@ -69,6 +69,9 @@ trait ViewDescriptor {
     }
     fn set_clip(&mut self) {
         debug_assert!(false, "This widget does not support setting clip");
+    }
+    fn set_object_fit(&mut self, _fit: crate::image::ObjectFit) {
+        debug_assert!(false, "This widget does not support setting object_fit");
     }
 }
 
@@ -210,6 +213,11 @@ impl AnyView {
     
     pub fn clip(mut self) -> Self {
         self.inner.set_clip();
+        self
+    }
+
+    pub fn object_fit(mut self, fit: crate::image::ObjectFit) -> Self {
+        self.inner.set_object_fit(fit);
         self
     }
 
@@ -1610,6 +1618,66 @@ pub fn key_value_dyn(key: &str, value_fn: impl Fn() -> String + 'static) -> AnyV
         label(value_fn).size(14.0).color(theme.text),
     ])
     .align(AlignItems::Center)
+}
+
+// ── Image ────────────────────────────────────────────────────────────────────
+
+pub fn image(data: crate::image::ImageData) -> AnyView {
+    AnyView {
+        inner: Box::new(ImageDescriptor {
+            data,
+            overrides: StyleOverrides::default(),
+            corner_radius: 0.0,
+            clip: false,
+            object_fit: crate::image::ObjectFit::default(),
+        }),
+    }
+}
+
+struct ImageDescriptor {
+    data: crate::image::ImageData,
+    overrides: StyleOverrides,
+    corner_radius: f32,
+    clip: bool,
+    object_fit: crate::image::ObjectFit,
+}
+
+impl ViewDescriptor for ImageDescriptor {
+    fn build(self: Box<Self>, tree: &mut LayoutTree) -> Box<dyn Widget> {
+        let mut style = Style::default();
+        // Give the image an intrinsic size based on its pixels if the user didn't specify one.
+        if self.overrides.width.is_none() {
+            style.width = ferrite_layout::Size::Px(self.data.width as f32);
+        }
+        if self.overrides.height.is_none() {
+            style.height = ferrite_layout::Size::Px(self.data.height as f32);
+        }
+        self.overrides.apply_to(&mut style);
+        let node = tree.new_leaf(style);
+        Box::new(ImageWidget {
+            node,
+            data: self.data,
+            corner_radius: self.corner_radius,
+            clip: self.clip,
+            object_fit: self.object_fit,
+        })
+    }
+    
+    fn style_overrides_mut(&mut self) -> &mut StyleOverrides {
+        &mut self.overrides
+    }
+    
+    fn set_corner_radius(&mut self, r: f32) {
+        self.corner_radius = r;
+    }
+    
+    fn set_clip(&mut self) {
+        self.clip = true;
+    }
+
+    fn set_object_fit(&mut self, fit: crate::image::ObjectFit) {
+        self.object_fit = fit;
+    }
 }
 
 #[cfg(test)]

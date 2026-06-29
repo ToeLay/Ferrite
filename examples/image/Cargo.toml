@@ -1,0 +1,8 @@
+[package]
+name = "example-image"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ferrite = { path = "../../crates/ferrite" }
+image = "0.25"
