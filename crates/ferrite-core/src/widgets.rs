@@ -676,6 +676,13 @@ impl Widget for Checkbox {
 
         let inner = Rect { x: outer.x + 2.0, y: outer.y + 2.0, width: outer.width - 4.0, height: outer.height - 4.0 };
         
+        // Draw surface color always-opaque base
+        out.push(DrawCommand::Rect { 
+            rect: inner, 
+            color: self.theme.surface, 
+            corner_radius: (self.theme.radius_sm - 2.0).max(0.0) 
+        });
+
         // Background fill fades in
         if anim_val > 0.01 {
             out.push(DrawCommand::Rect { 
@@ -698,15 +705,6 @@ impl Widget for Checkbox {
                 rect: mark, 
                 color: Color { a: self.theme.on_primary.a * anim_val, ..self.theme.on_primary }, 
                 corner_radius: 1.0 
-            });
-        }
-        
-        if anim_val < 0.99 {
-            // Draw surface color behind it if not fully animated
-            out.push(DrawCommand::Rect { 
-                rect: inner, 
-                color: Color { a: self.theme.surface.a * (1.0 - anim_val), ..self.theme.surface }, 
-                corner_radius: (self.theme.radius_sm - 2.0).max(0.0) 
             });
         }
 

@@ -225,7 +225,7 @@ pub fn render_to_pixmap(commands: &[DrawCommand], width: u32, height: u32, scale
                     mask_active = false;
                 }
             }
-            DrawCommand::Rect { rect, color, corner_radius } | DrawCommand::StrokeRect { rect, color, corner_radius, .. } => {
+            DrawCommand::Rect { rect, color, corner_radius } => {
                 let rect = FRect { x: rect.x * scale, y: rect.y * scale, width: rect.width * scale, height: rect.height * scale };
                 let corner_radius = *corner_radius * scale;
                 let mut draw_r = rect;
@@ -241,6 +241,18 @@ pub fn render_to_pixmap(commands: &[DrawCommand], width: u32, height: u32, scale
                 }
                 let mask = if mask_active && corner_radius > 0.0 { Some(&clip_mask) } else { None };
                 draw_rect(&mut pixmap, draw_r, *color, corner_radius, mask)
+            }
+            DrawCommand::StrokeRect { rect, color, corner_radius, stroke_width } => {
+                let rect = FRect { x: rect.x * scale, y: rect.y * scale, width: rect.width * scale, height: rect.height * scale };
+                let corner_radius = *corner_radius * scale;
+                let stroke_width = *stroke_width * scale;
+                if let Some(c) = active_clip {
+                    if rect.x > c.x + c.width || rect.y > c.y + c.height || rect.x + rect.width < c.x || rect.y + rect.height < c.y {
+                        continue;
+                    }
+                }
+                let mask = if mask_active { Some(&clip_mask) } else { None };
+                draw_stroke_rect(&mut pixmap, rect, *color, corner_radius, stroke_width, mask)
             }
             DrawCommand::Image { rect, image_data, image_width, image_height, corner_radius, object_fit } => {
                 let rect = FRect { x: rect.x * scale, y: rect.y * scale, width: rect.width * scale, height: rect.height * scale };
@@ -629,6 +641,39 @@ fn draw_rect(pixmap: &mut Pixmap, rect: FRect, color: FColor, radius: f32, clip:
         let path = rounded_rect_path(rect, radius.min(rect.width / 2.0).min(rect.height / 2.0));
         if let Some(path) = path {
             pixmap.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), clip);
+        }
+    }
+}
+
+fn draw_stroke_rect(pixmap: &mut Pixmap, mut rect: FRect, color: FColor, mut radius: f32, stroke_width: f32, clip: Option<&Mask>) {
+    let mut paint = Paint::default();
+    paint.set_color(to_skia_color(color));
+    paint.anti_alias = true;
+
+    let stroke = tiny_skia::Stroke {
+        width: stroke_width,
+        ..Default::default()
+    };
+
+    let half_w = stroke_width / 2.0;
+    rect.x += half_w;
+    rect.y += half_w;
+    rect.width -= stroke_width;
+    rect.height -= stroke_width;
+
+    if rect.width <= 0.0 || rect.height <= 0.0 {
+        return;
+    }
+
+    if radius <= 0.0 {
+        let Some(r) = SkRect::from_xywh(rect.x, rect.y, rect.width, rect.height) else { return };
+        let path = PathBuilder::from_rect(r);
+        pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), clip);
+    } else {
+        radius = (radius - half_w).max(0.0);
+        let path = rounded_rect_path(rect, radius.min(rect.width / 2.0).min(rect.height / 2.0));
+        if let Some(path) = path {
+            pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), clip);
         }
     }
 }
