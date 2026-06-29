@@ -113,7 +113,7 @@ pub trait Widget {
 
     fn dispatch_drag(&mut self, target: NodeId, tree: &LayoutTree, ox: f32, oy: f32, px: f32, py: f32) -> bool {
         if self.node_id() == target {
-            return true;
+            return self.drag_at(tree, ox, oy, px, py);
         }
         let r = tree.layout(self.node_id());
         let abs = Rect { x: ox + r.x, y: oy + r.y, width: r.width, height: r.height };

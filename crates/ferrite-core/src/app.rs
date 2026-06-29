@@ -342,7 +342,9 @@ impl App {
         if clicked.is_none() {
             clicked = self.root.double_click_at(&self.tree, 0.0, 0.0, x, y);
         }
-        self.active_drag = None;
+        if clicked.is_some() {
+            self.active_drag = clicked;
+        }
         clicked.is_some()
     }
 
@@ -356,7 +358,9 @@ impl App {
         if clicked.is_none() {
             clicked = self.root.triple_click_at(&self.tree, 0.0, 0.0, x, y);
         }
-        self.active_drag = None;
+        if clicked.is_some() {
+            self.active_drag = clicked;
+        }
         clicked.is_some()
     }
 

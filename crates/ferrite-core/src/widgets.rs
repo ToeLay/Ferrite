@@ -760,7 +760,12 @@ impl Widget for Slider {
         let ax = ox + r.x;
         let ay = oy + r.y;
         if px < ax || py < ay || px > ax + r.width || py > ay + r.height { return None; }
-        let ratio = ((px - ax) / r.width).clamp(0.0, 1.0);
+        
+        let thumb_r = self.theme.spacing;
+        let travel_w = (r.width - thumb_r * 2.0).max(1.0);
+        let track_start = ax + thumb_r;
+        let ratio = ((px - track_start) / travel_w).clamp(0.0, 1.0);
+        
         self.value.set(self.min + (self.max - self.min) * ratio);
         request_repaint();
         Some(self.node_id())
@@ -770,12 +775,12 @@ impl Widget for Slider {
         let r = tree.layout(self.node_id());
         let ax = ox + r.x;
         let _ay = oy + r.y;
-        // Unlike click, drag doesn't bounds check the Y axis so you don't lose
-        // tracking if your mouse wanders up/down slightly while dragging horizontally
-        if px < ax || px > ax + r.width {
-            // we still clamp the value to the bounds
-        }
-        let ratio = ((px - ax) / r.width).clamp(0.0, 1.0);
+        
+        let thumb_r = self.theme.spacing;
+        let travel_w = (r.width - thumb_r * 2.0).max(1.0);
+        let track_start = ax + thumb_r;
+        let ratio = ((px - track_start) / travel_w).clamp(0.0, 1.0);
+        
         self.value.set(self.min + (self.max - self.min) * ratio);
         request_repaint();
         true
@@ -784,29 +789,38 @@ impl Widget for Slider {
     fn paint_self(&self, rect: Rect, out: &mut Vec<DrawCommand>) {
         let val = self.value.get();
         let ratio = ((val - self.min) / (self.max - self.min)).clamp(0.0, 1.0);
+        
+        let thumb_r = self.theme.spacing;
+        let track_x = rect.x;
+        let track_w = rect.width.max(1.0);
+        
         let track_h = 4.0;
         let track_y = rect.y + rect.height / 2.0 - track_h / 2.0;
 
         out.push(DrawCommand::Rect {
-            rect: Rect { x: rect.x, y: track_y, width: rect.width, height: track_h },
+            rect: Rect { x: track_x, y: track_y, width: track_w, height: track_h },
             color: self.theme.muted, corner_radius: track_h / 2.0,
         });
 
-        let fill_w = rect.width * ratio;
+        let travel_w = (rect.width - thumb_r * 2.0).max(0.0);
+        let thumb_x = rect.x + travel_w * ratio;
+        
+        let fill_w = (travel_w * ratio) + thumb_r;
         if fill_w > 0.0 {
             out.push(DrawCommand::Rect {
-                rect: Rect { x: rect.x, y: track_y, width: fill_w, height: track_h },
+                rect: Rect { x: track_x, y: track_y, width: fill_w, height: track_h },
                 color: self.theme.primary, corner_radius: track_h / 2.0,
             });
         }
 
-        let thumb_r = self.theme.spacing;
-        let thumb_cx = rect.x + rect.width * ratio;
-        let thumb_x = (thumb_cx - thumb_r).max(rect.x);
         let thumb_y = rect.y + rect.height / 2.0 - thumb_r;
         out.push(DrawCommand::Rect {
             rect: Rect { x: thumb_x, y: thumb_y, width: thumb_r * 2.0, height: thumb_r * 2.0 },
             color: self.theme.surface, corner_radius: thumb_r,
+        });
+        out.push(DrawCommand::StrokeRect {
+            rect: Rect { x: thumb_x, y: thumb_y, width: thumb_r * 2.0, height: thumb_r * 2.0 },
+            color: self.theme.border, corner_radius: thumb_r, stroke_width: 1.0,
         });
         out.push(DrawCommand::Rect {
             rect: Rect { x: thumb_x + 2.0, y: thumb_y + 2.0, width: thumb_r * 2.0 - 4.0, height: thumb_r * 2.0 - 4.0 },
